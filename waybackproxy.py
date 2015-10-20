@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import re, socket, SocketServer, urllib2, urlparse
+import re, socket, SocketServer, sys, threading, urllib2, urlparse
 from config import *
 
 class ThreadingTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
@@ -48,7 +48,7 @@ class Handler(SocketServer.BaseRequestHandler):
 				else:
 					# pass-through requests to web.archive.org
 					# required for QUICK_IMAGES
-					print '[>] [QI] {0}'.format('/'.join(request_url.split('/')[5:]))
+					_print('[>] [QI] {0}'.format('/'.join(request_url.split('/')[5:])))
 					conn = urllib2.urlopen(request_url)
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
 				# apply GEOCITIES_FIX and pass it through
@@ -56,15 +56,15 @@ class Handler(SocketServer.BaseRequestHandler):
 				hostname = split[2] = 'www.oocities.org'
 				request_url = '/'.join(split)
 				
-				print '[>] {0}'.format(request_url)
+				_print('[>] {0}'.format(request_url))
 				conn = urllib2.urlopen(request_url)
 			else:
 				# get from Wayback
-				print '[>] {0}'.format(request_url)
+				_print('[>] {0}'.format(request_url))
 				conn = urllib2.urlopen('http://web.archive.org/web/{0}/{1}'.format(DATE, request_url))
 		except urllib2.HTTPError as e:
 			# an error has been found
-			print '[!] {0} {1}'.format(e.code, e.reason)
+			_print('[!] {0} {1}'.format(e.code, e.reason))
 			return self.error_page(http_version, e.code, e.reason)
 		
 		# get content type
@@ -216,10 +216,17 @@ class Handler(SocketServer.BaseRequestHandler):
 		"""Return the server signature."""
 		return 'WaybackProxy on {0}'.format(socket.gethostname())
 
+print_lock = threading.Lock()
+def _print(s, linebreak=True):
+	print_lock.acquire()
+	sys.stdout.write(linebreak and (s + '\n') or s)
+	sys.stdout.flush()
+	print_lock.release()
+
 def main():
 	"""Starts the server."""
 	server = ThreadingTCPServer(('', LISTEN_PORT), Handler)
-	print '[-] Now listening on port {0}'.format(LISTEN_PORT)
+	_print('[-] Now listening on port {0}'.format(LISTEN_PORT))
 	try:
 		server.serve_forever()
 	except KeyboardInterrupt: # Ctrl+C to stop
