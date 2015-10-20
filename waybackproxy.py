@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import re, socket, SocketServer, urllib2, urlparse
-from settings import *
+from config import *
 
 class ThreadingTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""

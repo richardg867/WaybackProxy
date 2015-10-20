@@ -6,10 +6,10 @@ WaybackProxy is a HTTP proxy that sends all requests through the [Internet Archi
 
 ## Setup
 
-1. Edit `settings.py` to your liking
+1. Edit `config.py` to your liking
 2. Start `waybackproxy.py`
 3. Set your antique browser to use a HTTP proxy at the IP and port WaybackProxy is listening on
-4. Try it out! You can edit most settings that are in `settings.py` by browsing to http://web.archive.org while on the proxy, although you must edit `settings.py` to make them permanent.
+4. Try it out! You can edit most settings that are in `config.py` by browsing to http://web.archive.org while on the proxy, although you must edit `config.py` to make them permanent.
 5. Press Ctrl+C to stop
 
 ## Limitations

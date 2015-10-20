@@ -12,7 +12,7 @@ GEOCITIES_FIX = True
 # http://web.archive.org/... as a result.
 QUICK_IMAGES = True
 
-# Allow the Content-Type header to contain en encoding. Some old browsers
+# Allow the Content-Type header to contain an encoding. Some old browsers
 # (Mosaic?) don't understand that and fail to load anything - set this to
 # False if you're using one of them.
 CONTENT_TYPE_ENCODING = True
