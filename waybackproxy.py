@@ -218,7 +218,8 @@ class Handler(SocketServer.BaseRequestHandler):
 
 def main():
 	"""Starts the server."""
-	server = ThreadingTCPServer(('', 8888), Handler)
+	server = ThreadingTCPServer(('', LISTEN_PORT), Handler)
+	print '[-] Now listening on port {0}'.format(LISTEN_PORT)
 	try:
 		server.serve_forever()
 	except KeyboardInterrupt: # Ctrl+C to stop
