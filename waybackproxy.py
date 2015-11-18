@@ -36,12 +36,32 @@ class Handler(SocketServer.BaseRequestHandler):
 		host = parsed.netloc.split(':')
 		hostname = host[0]
 		
-		# read out the headers
+		# read out the headers, saving the PAC file host
+		pac_host = '" + location.host + ":' + str(LISTEN_PORT) # may not actually work
 		while line.rstrip('\r\n') != '':
 			line = f.readline()
+			if line[:6].lower() == 'host: ':
+				pac_host = line[6:].rstrip('\r\n')
+				if ':' not in pac_host: # who would run this on port 80 anyway?
+					pac_host += ':80'
 		
 		try:
-			if hostname == 'web.archive.org':
+			if path == '/proxy.pac':
+				# PAC file to bypass QUICK_IMAGES requests
+				pac  = http_version + ''' 200 OK\r\n'''
+				pac += '''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
+				pac += '''\r\n'''
+				pac += '''function FindProxyForURL(url, host)\r\n'''
+				pac += '''{\r\n'''
+				pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*"))\r\n'''
+				pac += '''	{\r\n'''
+				pac += '''		return "DIRECT";\r\n'''
+				pac += '''	}\r\n'''
+				pac += '''	return "PROXY {0}";\r\n'''.format(pac_host)
+				pac += '''}\r\n'''
+				self.request.sendall(pac)
+				return
+			elif hostname == 'web.archive.org':
 				if path[:5] != '/web/':
 					# launch settings
 					return self.handle_settings(parsed.query)
