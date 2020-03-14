@@ -25,7 +25,7 @@ class Handler(socketserver.BaseRequestHandler):
 			return self.error_page(http_version, 501, 'Not Implemented')
 		
 		# parse the URL
-		request_url = split[1]
+		request_url = archived_url = split[1]
 		parsed = urllib.parse.urlparse(request_url)
 		
 		# make a path
@@ -83,7 +83,6 @@ class Handler(socketserver.BaseRequestHandler):
 
 					# did we get an username:password with an asset date code?
 					if auth:
-						archived_url = request_url
 						request_url = 'http://web.archive.org/web/{0}/{1}'.format(auth.replace(':', ''), archived_url)
 					else:
 						archived_url = '/'.join(request_url.split('/')[5:])
@@ -99,22 +98,26 @@ class Handler(socketserver.BaseRequestHandler):
 							raise e
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
 				# apply GEOCITIES_FIX and pass it through
-				split = request_url.split('/')
+				_print('[>] {0}'.format(archived_url))
+
+				split = archived_url.split('/')
 				hostname = split[2] = 'www.oocities.org'
 				request_url = '/'.join(split)
 				
-				_print('[>] {0}'.format(request_url))
 				conn = urllib.request.urlopen(request_url)
 			else:
 				# get from Wayback
-				_print('[>] {0}'.format(request_url))
-				conn = urllib.request.urlopen('http://web.archive.org/web/{0}/{1}'.format(DATE, request_url))
+				_print('[>] {0}'.format(archived_url))
+
+				request_url = 'http://web.archive.org/web/{0}/{1}'.format(DATE, archived_url)
+
+				conn = urllib.request.urlopen(request_url)
 		except urllib.error.HTTPError as e:
 			# an error has been found
 
 			# 403 or 404 => heuristically determine the static URL for some redirect scripts
 			if e.code in (403, 404):
-				match = re.search('''(?:\?|&)(?:target|trg|dest(?:ination)?|to)?(?:url)?=(http[^&]+)''', request_url, re.IGNORECASE)
+				match = re.search('''(?:\?|&)(?:target|trg|dest(?:ination)?|to)?(?:url)?=(http[^&]+)''', archived_url, re.IGNORECASE)
 				if match:
 					# we found it
 					new_url = urllib.parse.unquote_plus(match.group(1))
@@ -140,7 +143,7 @@ class Handler(socketserver.BaseRequestHandler):
 			# through the QUICK_IMAGES interface.
 			if hostname == 'web.archive.org':
 				conn.close()
-				return self.redirect_page(http_version, '/'.join(request_url.split('/')[5:]), 301)
+				return self.redirect_page(http_version, '/'.join(archived_url.split('/')[5:]), 301)
 
 			# consume all data
 			data = conn.read()
@@ -157,7 +160,8 @@ class Handler(socketserver.BaseRequestHandler):
 						# In that case, a simple redirect would result in a
 						# redirect loop. Download the URL and render it instead.
 						request_url = match.group(1).decode('ascii', 'ignore')
-						print('[f]', request_url)
+						archived_url = '/'.join(request_url.split('/')[5:])
+						print('[f]', archived_url)
 						try:
 							conn = urllib.request.urlopen(request_url)
 						except urllib.error.HTTPError as e:
@@ -177,9 +181,9 @@ class Handler(socketserver.BaseRequestHandler):
 							redirect_code = match2.group(1)
 						else:
 							redirect_code = 302
-						request_url = match.group(1).decode('ascii', 'ignore')
-						print('[r]', request_url)
-						return self.redirect_page(http_version, request_url, redirect_code)
+						archived_url = match.group(1).decode('ascii', 'ignore')
+						print('[r]', archived_url)
+						return self.redirect_page(http_version, archived_url, redirect_code)
 
 				# pre-toolbar scripts and CSS
 				data = re.sub(b'<script src="//archive\.org/(?:.*)<!-- End Wayback Rewrite JS Include -->', b'', data, flags=re.S)
@@ -222,10 +226,10 @@ class Handler(socketserver.BaseRequestHandler):
 				# fix links
 				data = re.sub(b'//([^.]*)\.oocities\.com/', b'//\\1.geocities.com/', data, flags=re.S)
 
-			self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\n\r\n'.format(http_version, content_type).encode('ascii', 'ignore'))
+			self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\nETag: "{2}"\r\n\r\n'.format(http_version, content_type, request_url.replace('"', '')).encode('ascii', 'ignore'))
 			self.request.sendall(data)
 		else: # other data
-			self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\n\r\n'.format(http_version, content_type).encode('ascii', 'ignore'))
+			self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\nETag: "{2}"\r\n\r\n'.format(http_version, content_type, request_url.replace('"', '')).encode('ascii', 'ignore'))
 
 			while True:
 				data = conn.read(1024)
