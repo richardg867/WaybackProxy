@@ -58,7 +58,7 @@ class Handler(socketserver.BaseRequestHandler):
 				auth = base64.b64decode(ll[21:])
 		
 		try:
-			if path == '/proxy.pac':
+			if path in ('/proxy.pac', '/wpad.dat', '/wpad.da'):
 				# PAC file to bypass QUICK_IMAGES requests
 				pac  = http_version.encode('ascii', 'ignore') + b''' 200 OK\r\n'''
 				pac += b'''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
