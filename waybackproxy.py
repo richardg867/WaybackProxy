@@ -39,6 +39,7 @@ class Handler(socketserver.BaseRequestHandler):
 		
 		# read out the headers, saving the PAC file host
 		pac_host = '" + location.host + ":' + str(LISTEN_PORT) # may not actually work
+		effective_date = DATE
 		auth = None
 		while line.rstrip('\r\n') != '':
 			line = f.readline()
@@ -49,10 +50,7 @@ class Handler(socketserver.BaseRequestHandler):
 					pac_host += ':80'
 			elif ll[:21] == 'x-waybackproxy-date: ':
 				# API for a personal project of mine
-				new_date = line[21:].rstrip('\r\n')
-				if DATE != new_date:
-					DATE = new_date
-					print('[-] Header requested date', DATE)
+				effective_date = line[21:].rstrip('\r\n')
 			elif ll[:21] == 'authorization: basic ':
 				# asset date code passed as username:password
 				auth = base64.b64decode(ll[21:])
@@ -109,7 +107,7 @@ class Handler(socketserver.BaseRequestHandler):
 				# get from Wayback
 				_print('[>] {0}'.format(archived_url))
 
-				request_url = 'http://web.archive.org/web/{0}/{1}'.format(DATE, archived_url)
+				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)
 
 				conn = urllib.request.urlopen(request_url)
 		except urllib.error.HTTPError as e:
