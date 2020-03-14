@@ -17,5 +17,4 @@ WaybackProxy is a HTTP proxy that sends all requests through the [Internet Archi
 ## Known issues and limitations
 
 * The Wayback Machine itself is not 100% reliable, especially when it comes to images on archived pages.
-* Dates are not preserved on redirect, which can lead to 404 errors on a few websites.
 * WaybackProxy is not a generic proxy. The POST and CONNECT methods are not implemented.

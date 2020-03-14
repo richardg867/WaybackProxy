@@ -1,6 +1,9 @@
 #!/usr/bin/env python
-import base64, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
+import base64, lrudict, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
 from config import *
+
+# internal LRU dictionary for preserving URLs on redirect
+date_cache = lrudict.LRUDict(maxduration=60, maxsize=1024)
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
@@ -54,7 +57,7 @@ class Handler(socketserver.BaseRequestHandler):
 			elif ll[:21] == 'authorization: basic ':
 				# asset date code passed as username:password
 				auth = base64.b64decode(ll[21:])
-		
+
 		try:
 			if path in ('/proxy.pac', '/wpad.dat', '/wpad.da'):
 				# PAC file to bypass QUICK_IMAGES requests
@@ -106,6 +109,9 @@ class Handler(socketserver.BaseRequestHandler):
 			else:
 				# get from Wayback
 				_print('[>] {0}'.format(archived_url))
+
+				# get cached date for redirects
+				effective_date = date_cache.get(effective_date + '\x00' + archived_url, effective_date)
 
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)
 
@@ -173,7 +179,7 @@ class Handler(socketserver.BaseRequestHandler):
 						data = conn.read()
 
 				if b'<title></title>' in data and b'<h1><span>Internet Archive\'s Wayback Machine</span></h1>' in data:
-					match = re.search(b'<p class="impatient"><a href="(?:(?:http(?:s)?:)?//web\.archive\.org)?/web/(?:[^/]+)/([^"]+)">Impatient\?</a></p>', data)
+					match = re.search(b'<p class="impatient"><a href="(?:(?:http(?:s)?:)?//web\.archive\.org)?/web/([^/]+)/([^"]+)">Impatient\?</a></p>', data)
 					if match:
 						# wayback redirect page, follow it
 						match2 = re.search(b'<p class="code shift red">Got an HTTP ([0-9]+)', data)
@@ -181,7 +187,8 @@ class Handler(socketserver.BaseRequestHandler):
 							redirect_code = int(match2.group(1))
 						except:
 							redirect_code = 302
-						archived_url = match.group(1).decode('ascii', 'ignore')
+						archived_url = match.group(2).decode('ascii', 'ignore')
+						date_cache[effective_date + '\x00' + archived_url] = match.group(1).decode('ascii', 'ignore')
 						print('[r]', archived_url)
 						return self.redirect_page(http_version, archived_url, redirect_code)
 
@@ -212,7 +219,14 @@ class Handler(socketserver.BaseRequestHandler):
 						QUICK_IMAGES == 2 and b'\\3://\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3://', data)
 					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([0-9]+)/', b'', data)
 				else:
-					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([^/]+)/', b'', data)
+					#data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([^/]+)/', b'', data)
+					def add_to_date_cache(match):
+						orig_url = match.group(2)
+						new_date = match.group(1)
+						if len(new_date) > 14: # only cache asset URLs
+							date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = new_date.decode('ascii', 'ignore')
+						return orig_url
+					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([^/]+)/([^"\'#<>]+)', add_to_date_cache, data)
 			elif mode == 1: # oocities
 				# viewport/cache-control/max-width code (header)
 				data = re.sub(b'^(?:.*?)\n\n', b'', data, flags=re.S)
