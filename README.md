@@ -14,8 +14,8 @@ WaybackProxy is a HTTP proxy that sends all requests through the [Internet Archi
 4. Try it out! You can edit most settings that are in `config.py` by browsing to http://web.archive.org while on the proxy, although you must edit `config.py` to make them permanent.
 5. Press Ctrl+C to stop
 
-## Limitations
+## Known issues and limitations
 
-* The Wayback Machine itself. For one, sometimes archived pages lack random images for no reason at all.
-* 302 redirects are handled using a meta refresh hack, as Wayback sends them as regular pages.
-* WaybackProxy is not an all-around proxy. The POST and CONNECT methods are not implemented.
+* The Wayback Machine itself is not 100% reliable, especially when it comes to images on archived pages.
+* Dates are not preserved on redirect, which can lead to 404 errors on a few websites.
+* WaybackProxy is not a generic proxy. The POST and CONNECT methods are not implemented.
