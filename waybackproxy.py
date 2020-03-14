@@ -114,7 +114,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 			# 403 or 404 => heuristically determine the static URL for some redirect scripts
 			if e.code in (403, 404):
-				match = re.search('''(?:\?|&)(?:target|trg|dest(?:ination)?|to)(?:url)?=(http[^&]+)''', request_url, re.IGNORECASE)
+				match = re.search('''(?:\?|&)(?:target|trg|dest(?:ination)?|to)?(?:url)?=(http[^&]+)''', request_url, re.IGNORECASE)
 				if match:
 					# we found it
 					new_url = urllib.parse.unquote_plus(match.group(1))
