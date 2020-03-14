@@ -65,7 +65,7 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += b'''\r\n'''
 				pac += b'''function FindProxyForURL(url, host)\r\n'''
 				pac += b'''{\r\n'''
-				pac += b'''	if (shExpMatch(url, "http://web.archive.org/web/*"))\r\n'''
+				pac += b'''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
 				pac += b'''	{\r\n'''
 				pac += b'''		return "DIRECT";\r\n'''
 				pac += b'''	}\r\n'''
