@@ -177,9 +177,9 @@ class Handler(socketserver.BaseRequestHandler):
 					if match:
 						# wayback redirect page, follow it
 						match2 = re.search(b'<p class="code shift red">Got an HTTP ([0-9]+)', data)
-						if match2:
-							redirect_code = match2.group(1)
-						else:
+						try:
+							redirect_code = int(match2.group(1))
+						except:
 							redirect_code = 302
 						archived_url = match.group(1).decode('ascii', 'ignore')
 						print('[r]', archived_url)
