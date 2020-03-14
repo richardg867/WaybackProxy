@@ -54,7 +54,7 @@ class Handler(socketserver.BaseRequestHandler):
 					DATE = new_date
 					print('[-] Header requested date', DATE)
 			elif ll[:21] == 'authorization: basic ':
-				# asset datecode passed as username:password
+				# asset date code passed as username:password
 				auth = base64.b64decode(ll[21:])
 		
 		try:
@@ -81,7 +81,7 @@ class Handler(socketserver.BaseRequestHandler):
 					# pass-through requests to web.archive.org
 					# required for QUICK_IMAGES
 
-					# did we get an username:password with an asset datecode?
+					# did we get an username:password with an asset date code?
 					if auth:
 						archived_url = request_url
 						request_url = 'http://web.archive.org/web/{0}/{1}'.format(auth.replace(':', ''), archived_url)
@@ -156,10 +156,10 @@ class Handler(socketserver.BaseRequestHandler):
 						# inexplicably render inside a media playback iframe.
 						# In that case, a simple redirect would result in a
 						# redirect loop. Download the URL and render it instead.
-						new_url = match.group(1).decode('ascii', 'ignore')
-						print('[f]', new_url)
+						request_url = match.group(1).decode('ascii', 'ignore')
+						print('[f]', request_url)
 						try:
-							conn = urllib.request.urlopen(new_url)
+							conn = urllib.request.urlopen(request_url)
 						except urllib.error.HTTPError as e:
 							_print('[!]', e.code, e.reason)
 							return self.error_page(http_version, e.code, e.reason)
@@ -177,9 +177,9 @@ class Handler(socketserver.BaseRequestHandler):
 							redirect_code = match2.group(1)
 						else:
 							redirect_code = 302
-						new_url = match.group(1).decode('ascii', 'ignore')
-						print('[r]', new_url)
-						return self.redirect_page(http_version, new_url, redirect_code)
+						request_url = match.group(1).decode('ascii', 'ignore')
+						print('[r]', request_url)
+						return self.redirect_page(http_version, request_url, redirect_code)
 
 				# pre-toolbar scripts and CSS
 				data = re.sub(b'<script src="//archive\.org/(?:.*)<!-- End Wayback Rewrite JS Include -->', b'', data, flags=re.S)
