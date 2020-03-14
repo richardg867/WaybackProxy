@@ -20,4 +20,4 @@ QUICK_IMAGES = True
 CONTENT_TYPE_ENCODING = True
 
 # Don't print log entries
-SILENT = True
+SILENT = False

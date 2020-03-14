@@ -312,7 +312,8 @@ class Handler(socketserver.BaseRequestHandler):
 print_lock = threading.Lock()
 def _print(*args, linebreak=True):
 	"""Logging function."""
-	s = ' '.join(args)
+	if SILENT: return
+	s = ' '.join([str(x) for x in args])
 	print_lock.acquire()
 	sys.stdout.write(linebreak and (s + '\n') or s)
 	sys.stdout.flush()
