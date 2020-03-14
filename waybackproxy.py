@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import base64, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse, urllib.parse
+import base64, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
 from config import *
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -91,6 +91,16 @@ class Handler(socketserver.BaseRequestHandler):
 				conn = urllib.request.urlopen('http://web.archive.org/web/{0}/{1}'.format(DATE, request_url))
 		except urllib.error.HTTPError as e:
 			# an error has been found
+
+			# 403 or 404 => heuristically determine the static URL for some redirect scripts
+			if e.code in (403, 404):
+				match = re.search('''(?:\?|&)(?:target|trg|dest(?:ination)?|to)(?:url)?=(http[^&]+)''', request_url, re.IGNORECASE)
+				if match:
+					# we found it
+					new_url = urllib.parse.unquote_plus(match.group(1))
+					_print('[r]', new_url)
+					return self.redirect_page(http_version, new_url)
+
 			_print('[!] {0} {1}'.format(e.code, e.reason))
 			return self.error_page(http_version, e.code, e.reason)
 		
@@ -217,6 +227,20 @@ class Handler(socketserver.BaseRequestHandler):
 		# send error page and stop
 		self.request.sendall('{0} {1} {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, reason, len(errorpage), errorpage).encode('utf8', 'ignore'))
 		self.request.close()
+
+	def redirect_page(self, http_version, target, code=302):
+		"""Generate a redirect page."""
+
+		# make redirect page
+		redirectpage  = '<html><head><title>Redirect</title><meta http-equiv="refresh" content="0;url='
+		redirectpage += target
+		redirectpage += '"></head><body><p>If you are not redirected, <a href="'
+		redirectpage += target
+		redirectpage += '">click here</a>.</p></body></html>'
+
+		# send redirect page and stop
+		self.request.sendall('{0} {1} Found\r\nLocation: {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n'.format(http_version, code, target, len(redirectpage), redirectpage).encode('utf8', 'ignore'))
+		self.request.close()
 	
 	def handle_settings(self, query):
 		"""Generate the settings page."""
@@ -252,7 +276,9 @@ class Handler(socketserver.BaseRequestHandler):
 		return 'WaybackProxy on {0}'.format(socket.gethostname())
 
 print_lock = threading.Lock()
-def _print(s, linebreak=True):
+def _print(*args, linebreak=True):
+	"""Logging function."""
+	s = ' '.join(args)
 	print_lock.acquire()
 	sys.stdout.write(linebreak and (s + '\n') or s)
 	sys.stdout.flush()
