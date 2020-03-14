@@ -143,7 +143,7 @@ class Handler(socketserver.BaseRequestHandler):
 			# through the QUICK_IMAGES interface.
 			if hostname == 'web.archive.org':
 				conn.close()
-				return self.redirect_page(http_version, '/'.join(archived_url.split('/')[5:]), 301)
+				return self.redirect_page(http_version, '/'.join(request_url.split('/')[5:]), 301)
 
 			# consume all data
 			data = conn.read()
