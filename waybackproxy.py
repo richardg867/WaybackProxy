@@ -1,15 +1,16 @@
 #!/usr/bin/env python
-import re, socket, SocketServer, sys, threading, urllib2, urlparse
+import base64, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse, urllib.parse
 from config import *
 
-class ThreadingTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
+class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
 	pass
 
-class Handler(SocketServer.BaseRequestHandler):
+class Handler(socketserver.BaseRequestHandler):
 	"""Main request handler."""
 	def handle(self):
 		"""Handle a request."""
+		global DATE
 		
 		# readline is pretty convenient
 		f = self.request.makefile()
@@ -25,7 +26,7 @@ class Handler(SocketServer.BaseRequestHandler):
 		
 		# parse the URL
 		request_url = split[1]
-		parsed = urlparse.urlparse(request_url)
+		parsed = urllib.parse.urlparse(request_url)
 		
 		# make a path
 		path = parsed.path
@@ -44,21 +45,27 @@ class Handler(SocketServer.BaseRequestHandler):
 				pac_host = line[6:].rstrip('\r\n')
 				if ':' not in pac_host: # who would run this on port 80 anyway?
 					pac_host += ':80'
+			elif line[:21].lower() == 'x-waybackproxy-date: ':
+				# API for a personal project of mine
+				new_date = line[21:].rstrip('\r\n')
+				if DATE != new_date:
+					DATE = new_date
+					print('[-] Header requested date', DATE)
 		
 		try:
 			if path == '/proxy.pac':
 				# PAC file to bypass QUICK_IMAGES requests
-				pac  = http_version + ''' 200 OK\r\n'''
-				pac += '''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
-				pac += '''\r\n'''
-				pac += '''function FindProxyForURL(url, host)\r\n'''
-				pac += '''{\r\n'''
-				pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*"))\r\n'''
-				pac += '''	{\r\n'''
-				pac += '''		return "DIRECT";\r\n'''
-				pac += '''	}\r\n'''
-				pac += '''	return "PROXY {0}";\r\n'''.format(pac_host)
-				pac += '''}\r\n'''
+				pac  = http_version.encode('ascii', 'ignore') + b''' 200 OK\r\n'''
+				pac += b'''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
+				pac += b'''\r\n'''
+				pac += b'''function FindProxyForURL(url, host)\r\n'''
+				pac += b'''{\r\n'''
+				pac += b'''	if (shExpMatch(url, "http://web.archive.org/web/*"))\r\n'''
+				pac += b'''	{\r\n'''
+				pac += b'''		return "DIRECT";\r\n'''
+				pac += b'''	}\r\n'''
+				pac += b'''	return "PROXY ''' + pac_host.encode('ascii', 'ignore') + b'''";\r\n'''
+				pac += b'''}\r\n'''
 				self.request.sendall(pac)
 				return
 			elif hostname == 'web.archive.org':
@@ -69,7 +76,7 @@ class Handler(SocketServer.BaseRequestHandler):
 					# pass-through requests to web.archive.org
 					# required for QUICK_IMAGES
 					_print('[>] [QI] {0}'.format('/'.join(request_url.split('/')[5:])))
-					conn = urllib2.urlopen(request_url)
+					conn = urllib.request.urlopen(request_url)
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
 				# apply GEOCITIES_FIX and pass it through
 				split = request_url.split('/')
@@ -77,22 +84,22 @@ class Handler(SocketServer.BaseRequestHandler):
 				request_url = '/'.join(split)
 				
 				_print('[>] {0}'.format(request_url))
-				conn = urllib2.urlopen(request_url)
+				conn = urllib.request.urlopen(request_url)
 			else:
 				# get from Wayback
 				_print('[>] {0}'.format(request_url))
-				conn = urllib2.urlopen('http://web.archive.org/web/{0}/{1}'.format(DATE, request_url))
-		except urllib2.HTTPError as e:
+				conn = urllib.request.urlopen('http://web.archive.org/web/{0}/{1}'.format(DATE, request_url))
+		except urllib.error.HTTPError as e:
 			# an error has been found
 			_print('[!] {0} {1}'.format(e.code, e.reason))
 			return self.error_page(http_version, e.code, e.reason)
 		
 		# get content type
-		content_type = conn.info().getheader('Content-Type')
+		content_type = conn.info().get('Content-Type')
 		if not CONTENT_TYPE_ENCODING and content_type.find(';') > -1: content_type = content_type[:content_type.find(';')]
 		
 		# send headers		
-		self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\n\r\n'.format(http_version, content_type))
+		self.request.sendall(http_version.encode('ascii', 'ignore') + b' 200 OK\r\nContent-Type: ' + content_type.encode('ascii', 'ignore') + b'\r\n\r\n')
 		
 		# set the mode: [0]wayback [1]oocities
 		mode = 0
@@ -100,48 +107,50 @@ class Handler(SocketServer.BaseRequestHandler):
 		
 		if content_type[:9] == 'text/html' in content_type: # HTML
 			toolbar = mode == 1 # oocities header starts without warning
-			after_header = False
 			redirect_page = False
 			for line in conn:
-				line = line.rstrip('\r\n')
+				line = line.rstrip(b'\r\n')
 				
 				if mode == 0:
 					if toolbar:
-						if line == '<!-- END WAYBACK TOOLBAR INSERT -->':
-							# toolbar is done - resume relaying on the next line
-							toolbar = False
-							after_header = True
-						continue
+						for delimiter in (b'<\!-- END WAYBACK TOOLBAR INSERT -->', b'<\!-- End Wayback Rewrite JS Include -->'):
+							if re.search(delimiter, line):
+								# toolbar is done - resume relaying on the next line
+								toolbar = False
+								line = re.sub(delimiter, b'', line)
+								break
+						if toolbar: continue
 					elif redirect_page:
 						# this is a really bad way to deal with Wayback's 302
 						# pages, but necessary with the way this proxy works
-						match = re.search('<p class="impatient"><a href="/web/(?:[^/]+)/([^"]+)">Impatient\\?</a></p>', line)
+						match = re.search(b'<p class="impatient"><a href="/web/(?:[^/]+)/([^"]+)">Impatient\\?</a></p>', line)
 						if match:
-							line = '<title>WaybackProxy Redirect</title><meta http-equiv="refresh" content="0;url='
+							line  = b'<title>WaybackProxy Redirect</title><meta http-equiv="refresh" content="0;url='
 							line += match.group(1)
-							line += '"></head><body>If you are not redirected, <a href="'
+							line += b'"></head><body>If you are not redirected, <a href="'
 							line += match.group(1)
-							line += '">click here</a>.</body></html>'
+							line += b'">click here</a>.</body></html>'
 							self.request.sendall(line)
 							break
 						continue
 					
-					if not after_header:
-						ll = line.lower()
-						if line == '<script type="text/javascript" src="/static/js/analytics.js"></script>' or line == '<link type="text/css" rel="stylesheet" href="/static/css/banner-styles.css"/>' or line[:69] == '<script type="text/javascript">archive_analytics.values.server_name="':
-							# remove the CSS and tracking scripts added to <head>
-							continue
-						elif ll[:6] == '<base ':
-							# fix base
-							line = re.sub('/web/([0-9]+)/', '', line)
-					if line == '<!-- BEGIN WAYBACK TOOLBAR INSERT -->':
-						# remove the toolbar - stop relaying from now on
-						toolbar = True
-						continue
-					elif line == '\t\t<title>Internet Archive Wayback Machine</title>':
+					if b'<base ' in line.lower():
+						# fix base
+						line = re.sub(b'(?:http://web\.archive\.org)?/web/([0-9]+)/', b'', line)
+					elif line == b'\t\t<title>Internet Archive Wayback Machine</title>':
 						# redirect 302s - see the redirect_page code above
 						redirect_page = True
 						continue
+					else:
+						for delimiter in (
+							b'<\!-- BEGIN WAYBACK TOOLBAR INSERT -->',
+							b'<script src="//archive\.org/([^"]+)" type="text/javascript"></script>'
+						):
+							if re.search(delimiter, line):
+								# remove the toolbar - stop relaying from now on
+								toolbar = True
+								line = re.sub(delimiter, b'', line)
+								break
 					
 					if QUICK_IMAGES:
 						# QUICK_IMAGES works by intercepting asset URLs (those
@@ -151,32 +160,36 @@ class Handler(SocketServer.BaseRequestHandler):
 						# copy of that asset to DATE, as those URLs have specific
 						# date codes. The only side effect is tainting the HTML
 						# with web.archive.org URLs.
-						line = re.sub('/web/([0-9]+)([a-z]+_)/',
-							'http://web.archive.org/web/\\1\\2/', line)
-						line = re.sub('/web/([0-9]+)/', '', line)
+						line = re.sub(b'(?:http://web.archive.org)?/web/([0-9]+)([a-z]+_)/',
+							b'http://web.archive.org/web/\\1\\2/', line)
+						line = re.sub(b'(?:http://web.archive.org)?/web/([0-9]+)/', b'', line)
 					else:
-						line = re.sub('/web/([^/]+)/', '', line)
+						line = re.sub(b'(?:http://web.archive.org)?/web/([^/]+)/', b'', line)
 				elif mode == 1:
 					# remove the geocities/oocities-added code, which is
 					# conveniently wrapped around comments
 					if toolbar:
-						if line in ['<!-- text above generated by server. PLEASE REMOVE -->', '<!-- preceding code added by server. PLEASE REMOVE -->']:
+						if line in (
+							b'<!-- text above generated by server. PLEASE REMOVE -->',
+							b'<!-- preceding code added by server. PLEASE REMOVE -->'
+						):
 							toolbar = False
 						continue
-					elif line == '<!-- following code added by server. PLEASE REMOVE -->' or line[:54] == '<!-- text below generated by server. PLEASE REMOVE -->':
+					elif line == b'<!-- following code added by server. PLEASE REMOVE -->' \
+					or line[:54] == b'<!-- text below generated by server. PLEASE REMOVE -->':
 						toolbar = True
 						continue
 					
 					# taint? what taint?
-					line = line.replace('http://oocities.com', 'http://geocities.com')
-					line = line.replace('http://www.oocities.com', 'http://www.geocities.com')
+					line = line.replace(b'http://oocities.com', b'http://geocities.com')
+					line = line.replace(b'http://www.oocities.com', b'http://www.geocities.com')
 				
 				self.request.sendall(line)
-				self.request.sendall('\r\n')
+				self.request.sendall(b'\r\n')
 		else: # other data
 			while True:
 				data = conn.read(1024)
-				if data == '': break
+				if not data: break
 				self.request.sendall(data)
 		
 		self.request.close()
@@ -197,11 +210,12 @@ class Handler(SocketServer.BaseRequestHandler):
 		else: # another error
 			errorpage += 'Unknown error. The Wayback Machine may be experiencing technical difficulties.'
 		
-		errorpage += '</p><hr><i>{0}</i></body></html>'.format(self.signature())
+		errorpage += '</p><hr><i>'
+		errorpage += self.signature()
+		errorpage += '</i></body></html>'
 		
 		# send error page and stop
-		self.request.sendall('{0} {1} {2}\r\nContent-Length: {3}\r\n\r\n'.format(http_version, code, reason, len(errorpage)))
-		self.request.sendall(errorpage)
+		self.request.sendall('{0} {1} {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, reason, len(errorpage), errorpage).encode('utf8', 'ignore'))
 		self.request.close()
 	
 	def handle_settings(self, query):
@@ -210,7 +224,7 @@ class Handler(SocketServer.BaseRequestHandler):
 		global DATE, GEOCITIES_FIX, QUICK_IMAGES, CONTENT_TYPE_ENCODING
 		
 		if query != '': # handle any parameters that may have been sent
-			parsed = urlparse.parse_qs(query)
+			parsed = urllib.parse.parse_qs(query)
 			
 			if 'date' in parsed: DATE = parsed['date'][0]
 			GEOCITIES_FIX = 'gcFix' in parsed
@@ -218,18 +232,19 @@ class Handler(SocketServer.BaseRequestHandler):
 			CONTENT_TYPE_ENCODING = 'ctEncoding' in parsed
 		
 		# send the page and stop
-		self.request.sendall('HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n')
-		self.request.sendall('<html><head><title>WaybackProxy Settings</title></head><body><p><b>')
-		self.request.sendall(self.signature())
-		self.request.sendall('</b></p><form method="get" action="/"><p>Date to get pages from: <input type="text" name="date" size="8" value="')
-		self.request.sendall(DATE)
-		self.request.sendall('"><br><input type="checkbox" name="gcFix"')
-		if GEOCITIES_FIX: self.request.sendall(' checked')
-		self.request.sendall('> Geocities Fix<br><input type="checkbox" name="quickImages"')
-		if QUICK_IMAGES: self.request.sendall(' checked')
-		self.request.sendall('> Quick images<br><input type="checkbox" name="ctEncoding"')
-		if CONTENT_TYPE_ENCODING: self.request.sendall(' checked')
-		self.request.sendall('> Encoding in Content-Type</p><p><input type="submit" value="Save"></p></form></body></html>')
+		settingspage  = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n'
+		settingspage += '<html><head><title>WaybackProxy Settings</title></head><body><p><b>'
+		settingspage += self.signature()
+		settingspage += '</b></p><form method="get" action="/"><p>Date to get pages from: <input type="text" name="date" size="8" value="'
+		settingspage += DATE
+		settingspage += '"><br><input type="checkbox" name="gcFix"'
+		if GEOCITIES_FIX: settingspage += ' checked'
+		settingspage += '> Geocities Fix<br><input type="checkbox" name="quickImages"'
+		if QUICK_IMAGES: settingspage += ' checked'
+		settingspage += '> Quick images<br><input type="checkbox" name="ctEncoding"'
+		if CONTENT_TYPE_ENCODING: settingspage += ' checked'
+		settingspage += '> Encoding in Content-Type</p><p><input type="submit" value="Save"></p></form></body></html>'
+		self.request.send(settingspage.encode('utf8', 'ignore'))
 		self.request.close()
 	
 	def signature(self):

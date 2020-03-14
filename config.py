@@ -16,3 +16,6 @@ QUICK_IMAGES = True
 # (Mosaic?) don't understand that and fail to load anything - set this to
 # False if you're using one of them.
 CONTENT_TYPE_ENCODING = True
+
+# Don't print log entries
+SILENT = True
