@@ -9,7 +9,9 @@ GEOCITIES_FIX = True
 
 # Use the Wayback-tampered URL as a shortcut when loading images.
 # May result in faster loads, but all images will point to 
-# http://web.archive.org/... as a result.
+# http://web.archive.org/... as a result. Set this value to 2 to enable an
+# experimental mode using username:passwords on top of the original URLs
+# instead (not supported by IE6 and some other browsers).
 QUICK_IMAGES = True
 
 # Allow the Content-Type header to contain an encoding. Some old browsers

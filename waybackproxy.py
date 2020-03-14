@@ -39,18 +39,23 @@ class Handler(socketserver.BaseRequestHandler):
 		
 		# read out the headers, saving the PAC file host
 		pac_host = '" + location.host + ":' + str(LISTEN_PORT) # may not actually work
+		auth = None
 		while line.rstrip('\r\n') != '':
 			line = f.readline()
-			if line[:6].lower() == 'host: ':
+			ll = line.lower()
+			if ll[:6] == 'host: ':
 				pac_host = line[6:].rstrip('\r\n')
 				if ':' not in pac_host: # who would run this on port 80 anyway?
 					pac_host += ':80'
-			elif line[:21].lower() == 'x-waybackproxy-date: ':
+			elif ll[:21] == 'x-waybackproxy-date: ':
 				# API for a personal project of mine
 				new_date = line[21:].rstrip('\r\n')
 				if DATE != new_date:
 					DATE = new_date
 					print('[-] Header requested date', DATE)
+			elif ll[:21] == 'authorization: basic ':
+				# asset datecode passed as username:password
+				auth = base64.b64decode(ll[21:])
 		
 		try:
 			if path == '/proxy.pac':
@@ -68,15 +73,30 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += b'''}\r\n'''
 				self.request.sendall(pac)
 				return
-			elif hostname == 'web.archive.org':
+			elif hostname == 'web.archive.org' or auth:
 				if path[:5] != '/web/':
 					# launch settings
 					return self.handle_settings(parsed.query)
 				else:
 					# pass-through requests to web.archive.org
 					# required for QUICK_IMAGES
-					_print('[>] [QI] {0}'.format('/'.join(request_url.split('/')[5:])))
-					conn = urllib.request.urlopen(request_url)
+
+					# did we get an username:password with an asset datecode?
+					if auth:
+						archived_url = request_url
+						request_url = 'http://web.archive.org/web/{0}/{1}'.format(auth.replace(':', ''), archived_url)
+					else:
+						archived_url = '/'.join(request_url.split('/')[5:])
+
+					_print('[>] [QI] {0}'.format(archived_url))
+					try:
+						conn = urllib.request.urlopen(request_url)
+					except urllib.error.HTTPError as e:
+						if e.code == 404:
+							# Try this file on another date, might be redundant
+							return self.redirect_page(http_version, archived_url)
+						else:
+							raise e
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
 				# apply GEOCITIES_FIX and pass it through
 				split = request_url.split('/')
@@ -106,97 +126,107 @@ class Handler(socketserver.BaseRequestHandler):
 		
 		# get content type
 		content_type = conn.info().get('Content-Type')
+		if content_type == None: content_type = 'text/html'
 		if not CONTENT_TYPE_ENCODING and content_type.find(';') > -1: content_type = content_type[:content_type.find(';')]
-		
-		# send headers		
-		self.request.sendall(http_version.encode('ascii', 'ignore') + b' 200 OK\r\nContent-Type: ' + content_type.encode('ascii', 'ignore') + b'\r\n\r\n')
 		
 		# set the mode: [0]wayback [1]oocities
 		mode = 0
 		if GEOCITIES_FIX and hostname in ['www.oocities.org', 'www.oocities.com']: mode = 1
 		
-		if content_type[:9] == 'text/html' in content_type: # HTML
-			toolbar = mode == 1 # oocities header starts without warning
-			redirect_page = False
-			for line in conn:
-				line = line.rstrip(b'\r\n')
-				
-				if mode == 0:
-					if toolbar:
-						for delimiter in (b'<\!-- END WAYBACK TOOLBAR INSERT -->', b'<\!-- End Wayback Rewrite JS Include -->'):
-							if re.search(delimiter, line):
-								# toolbar is done - resume relaying on the next line
-								toolbar = False
-								line = re.sub(delimiter, b'', line)
-								break
-						if toolbar: continue
-					elif redirect_page:
-						# this is a really bad way to deal with Wayback's 302
-						# pages, but necessary with the way this proxy works
-						match = re.search(b'<p class="impatient"><a href="/web/(?:[^/]+)/([^"]+)">Impatient\\?</a></p>', line)
-						if match:
-							line  = b'<title>WaybackProxy Redirect</title><meta http-equiv="refresh" content="0;url='
-							line += match.group(1)
-							line += b'"></head><body>If you are not redirected, <a href="'
-							line += match.group(1)
-							line += b'">click here</a>.</body></html>'
-							self.request.sendall(line)
-							break
-						continue
-					
-					if b'<base ' in line.lower():
-						# fix base
-						line = re.sub(b'(?:http://web\.archive\.org)?/web/([0-9]+)/', b'', line)
-					elif line == b'\t\t<title>Internet Archive Wayback Machine</title>':
-						# redirect 302s - see the redirect_page code above
-						redirect_page = True
-						continue
-					else:
-						for delimiter in (
-							b'<\!-- BEGIN WAYBACK TOOLBAR INSERT -->',
-							b'<script src="//archive\.org/([^"]+)" type="text/javascript"></script>'
-						):
-							if re.search(delimiter, line):
-								# remove the toolbar - stop relaying from now on
-								toolbar = True
-								line = re.sub(delimiter, b'', line)
-								break
-					
-					if QUICK_IMAGES:
-						# QUICK_IMAGES works by intercepting asset URLs (those
-						# with a date code ending in im_, js_...) and letting the
-						# proxy pass them through. This may reduce load time
-						# because Wayback doesn't have to hunt down the closest
-						# copy of that asset to DATE, as those URLs have specific
-						# date codes. The only side effect is tainting the HTML
-						# with web.archive.org URLs.
-						line = re.sub(b'(?:http://web.archive.org)?/web/([0-9]+)([a-z]+_)/',
-							b'http://web.archive.org/web/\\1\\2/', line)
-						line = re.sub(b'(?:http://web.archive.org)?/web/([0-9]+)/', b'', line)
-					else:
-						line = re.sub(b'(?:http://web.archive.org)?/web/([^/]+)/', b'', line)
-				elif mode == 1:
-					# remove the geocities/oocities-added code, which is
-					# conveniently wrapped around comments
-					if toolbar:
-						if line in (
-							b'<!-- text above generated by server. PLEASE REMOVE -->',
-							b'<!-- preceding code added by server. PLEASE REMOVE -->'
-						):
-							toolbar = False
-						continue
-					elif line == b'<!-- following code added by server. PLEASE REMOVE -->' \
-					or line[:54] == b'<!-- text below generated by server. PLEASE REMOVE -->':
-						toolbar = True
-						continue
-					
-					# taint? what taint?
-					line = line.replace(b'http://oocities.com', b'http://geocities.com')
-					line = line.replace(b'http://www.oocities.com', b'http://www.geocities.com')
-				
-				self.request.sendall(line)
-				self.request.sendall(b'\r\n')
+		if 'text/html' in content_type: # HTML
+			# Some dynamically generated links may end up pointing to
+			# web.archive.org. Correct that by redirecting the Wayback
+			# portion of the URL away if it ends up being HTML consumed
+			# through the QUICK_IMAGES interface.
+			if hostname == 'web.archive.org':
+				conn.close()
+				return self.redirect_page(http_version, '/'.join(request_url.split('/')[5:]), 301)
+
+			# consume all data
+			data = conn.read()
+
+			# patch the page
+			if mode == 0: # wayback
+				if b'<title>Wayback Machine</title>' in data:
+					match = re.search(b'<iframe id="playback" src="((?:(?:http(?:s)?:)?//web.archive.org)?/web/[^"]+)"', data)
+					if match:
+						# media playback iframe
+
+						# Some websites (especially ones that use frames)
+						# inexplicably render inside a media playback iframe.
+						# In that case, a simple redirect would result in a
+						# redirect loop. Download the URL and render it instead.
+						new_url = match.group(1).decode('ascii', 'ignore')
+						print('[f]', new_url)
+						try:
+							conn = urllib.request.urlopen(new_url)
+						except urllib.error.HTTPError as e:
+							_print('[!]', e.code, e.reason)
+							return self.error_page(http_version, e.code, e.reason)
+
+						content_type = conn.info().get('Content-Type')
+						if not CONTENT_TYPE_ENCODING and content_type.find(';') > -1: content_type = content_type[:content_type.find(';')]
+						data = conn.read()
+
+				if b'<title></title>' in data and b'<h1><span>Internet Archive\'s Wayback Machine</span></h1>' in data:
+					match = re.search(b'<p class="impatient"><a href="(?:(?:http(?:s)?:)?//web\.archive\.org)?/web/(?:[^/]+)/([^"]+)">Impatient\?</a></p>', data)
+					if match:
+						# wayback redirect page, follow it
+						match2 = re.search(b'<p class="code shift red">Got an HTTP ([0-9]+)', data)
+						if match2:
+							redirect_code = match2.group(1)
+						else:
+							redirect_code = 302
+						new_url = match.group(1).decode('ascii', 'ignore')
+						print('[r]', new_url)
+						return self.redirect_page(http_version, new_url, redirect_code)
+
+				# pre-toolbar scripts and CSS
+				data = re.sub(b'<script src="//archive\.org/(?:.*)<!-- End Wayback Rewrite JS Include -->', b'', data, flags=re.S)
+				# toolbar
+				data = re.sub(b'<!-- BEGIN WAYBACK TOOLBAR INSERT -->(?:.*)<!-- END WAYBACK TOOLBAR INSERT -->', b'', data, flags=re.S)
+				# comments on footer
+				data = re.sub(b'\n<!--\n     FILE ARCHIVED (?:.*)$', b'', data, flags=re.S)
+				# fix base tag
+				data = re.sub(b'(<base (?:[^>]*)href=(?:["\'])?)(?:(?:http(?:s)?:)?//web.archive.org)?/web/(?:[^/]+)/', b'\\1', data, flags=re.I + re.S)
+
+				# remove extraneous :80 from links
+				data = re.sub(b'((?:(?:http(?:s)?:)?//web.archive.org)?/web/)([^/]+)/([^:]+)://([^:]+):80/', b'\\1\\2/\\3://\\4/', data)
+				# fix links
+				if QUICK_IMAGES:
+					# QUICK_IMAGES works by intercepting asset URLs (those
+					# with a date code ending in im_, js_...) and letting the
+					# proxy pass them through. This may reduce load time
+					# because Wayback doesn't have to hunt down the closest
+					# copy of that asset to DATE, as those URLs have specific
+					# date codes. This taints the HTML with web.archive.org
+					# URLs. QUICK_IMAGES=2 uses the original URLs with an added
+					# username:password, which taints less but is not supported
+					# by all browsers - IE6 notably kills the whole page if it
+					# sees an iframe pointing to an invalid URL.
+					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)/([^:]+)://',
+						QUICK_IMAGES == 2 and b'\\3://\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3://', data)
+					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([0-9]+)/', b'', data)
+				else:
+					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([^/]+)/', b'', data)
+			elif mode == 1: # oocities
+				# viewport/cache-control/max-width code (header)
+				data = re.sub(b'^(?:.*?)\n\n', b'', data, flags=re.S)
+				# archive notice and tracking code (footer)
+				data = re.sub(b'<style> \n.zoomout { -webkit-transition: (?:.*)$', b'', data, flags=re.S)
+				# clearly labeled snippets from Geocities
+				data = re.sub(b'^(?:.*)<\!-- text above generated by server\. PLEASE REMOVE -->', b'', data, flags=re.S)
+				data = re.sub(b'<\!-- following code added by server\. PLEASE REMOVE -->(?:.*)<\!-- preceding code added by server\. PLEASE REMOVE -->', b'', data, flags=re.S)
+				data = re.sub(b'<\!-- text below generated by server\. PLEASE REMOVE -->(?:.*)$', b'', data, flags=re.S)
+
+				# fix links
+				data = re.sub(b'//([^.]*)\.oocities\.com/', b'//\\1.geocities.com/', data, flags=re.S)
+
+			self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\n\r\n'.format(http_version, content_type).encode('ascii', 'ignore'))
+			self.request.sendall(data)
 		else: # other data
+			self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\n\r\n'.format(http_version, content_type).encode('ascii', 'ignore'))
+
 			while True:
 				data = conn.read(1024)
 				if not data: break
@@ -239,7 +269,7 @@ class Handler(socketserver.BaseRequestHandler):
 		redirectpage += '">click here</a>.</p></body></html>'
 
 		# send redirect page and stop
-		self.request.sendall('{0} {1} Found\r\nLocation: {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n'.format(http_version, code, target, len(redirectpage), redirectpage).encode('utf8', 'ignore'))
+		self.request.sendall('{0} {1} Found\r\nLocation: {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, target, len(redirectpage), redirectpage).encode('utf8', 'ignore'))
 		self.request.close()
 	
 	def handle_settings(self, query):
