@@ -119,8 +119,8 @@ class Handler(socketserver.BaseRequestHandler):
 		except urllib.error.HTTPError as e:
 			# an error has been found
 
-			# 403 or 404 => heuristically determine the static URL for some redirect scripts
 			if e.code in (403, 404):
+				# 403 or 404 => heuristically determine the static URL for some redirect scripts
 				match = re.search('''(?:\?|&)(?:target|trg|dest(?:ination)?|to|go)?(?:url)?=(http[^&]+)''', archived_url, re.IGNORECASE)
 				if not match:
 					match = re.search('''/(?:target|trg|dest(?:ination)?|to|go)?(?:url)?/(http.+)''', archived_url, re.IGNORECASE)
@@ -129,6 +129,10 @@ class Handler(socketserver.BaseRequestHandler):
 					new_url = urllib.parse.unquote_plus(match.group(1))
 					_print('[r]', new_url)
 					return self.redirect_page(http_version, new_url)
+			elif e.code in (301, 302):
+				# 301 or 302 => urllib-generated error about an infinite redirect loop
+				_print('[!] Infinite redirect loop')
+				return self.error_page(http_version, 508, 'Infinite Redirect Loop')
 
 			_print('[!] {0} {1}'.format(e.code, e.reason))
 			return self.error_page(http_version, e.code, e.reason)
@@ -259,7 +263,7 @@ class Handler(socketserver.BaseRequestHandler):
 		errorpage = '<html><head><title>{0} {1}</title></head><body><h1>{1}</h1><p>'.format(code, reason)
 		
 		# add code information
-		if code == 404: # page not archived
+		if code in (404, 508): # page not archived or redirect loop
 			errorpage += 'This page may not be archived by the Wayback Machine.'
 		elif code == 403: # not crawled due to robots.txt
 			errorpage += 'This page was not archived due to a robots.txt block.'
