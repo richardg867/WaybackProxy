@@ -58,6 +58,13 @@ class Handler(socketserver.BaseRequestHandler):
 				# asset date code passed as username:password
 				auth = base64.b64decode(ll[21:])
 
+		# get cached date for redirects, if available
+		effective_date = date_cache.get(effective_date + '\x00' + archived_url, effective_date)
+
+		# get date from username:password, if available
+		if auth:
+			effective_date = auth.replace(':', '')
+
 		try:
 			if path in ('/proxy.pac', '/wpad.dat', '/wpad.da'):
 				# PAC file to bypass QUICK_IMAGES requests
@@ -74,20 +81,14 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += b'''}\r\n'''
 				self.request.sendall(pac)
 				return
-			elif hostname == 'web.archive.org' or auth:
+			elif hostname == 'web.archive.org':
 				if path[:5] != '/web/':
 					# launch settings
 					return self.handle_settings(parsed.query)
 				else:
 					# pass-through requests to web.archive.org
 					# required for QUICK_IMAGES
-
-					# did we get an username:password with an asset date code?
-					if auth:
-						request_url = 'http://web.archive.org/web/{0}/{1}'.format(auth.replace(':', ''), archived_url)
-					else:
-						archived_url = '/'.join(request_url.split('/')[5:])
-
+					archived_url = '/'.join(request_url.split('/')[5:])
 					_print('[>] [QI] {0}'.format(archived_url))
 					try:
 						conn = urllib.request.urlopen(request_url)
@@ -109,9 +110,6 @@ class Handler(socketserver.BaseRequestHandler):
 			else:
 				# get from Wayback
 				_print('[>] {0}'.format(archived_url))
-
-				# get cached date for redirects
-				effective_date = date_cache.get(effective_date + '\x00' + archived_url, effective_date)
 
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)
 
