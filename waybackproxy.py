@@ -291,6 +291,15 @@ class Handler(socketserver.BaseRequestHandler):
 		errorpage += '</p><hr><i>'
 		errorpage += self.signature()
 		errorpage += '</i></body></html>'
+
+		# add padding for IE
+		if len(errorpage) <= 512:
+			padding = '\n<!-- This comment pads the HTML so Internet Explorer displays this error page instead of its own. '
+			remainder = 510 - len(errorpage) - len(padding)
+			if remainder > 0:
+				padding += ' ' * remainder
+			padding += '-->'
+			errorpage += padding
 		
 		# send error page and stop
 		self.request.sendall('{0} {1} {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, reason, len(errorpage), errorpage).encode('utf8', 'ignore'))
