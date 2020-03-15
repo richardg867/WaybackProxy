@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-import base64, lrudict, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
+import base64, datetime, lrudict, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
 from config import *
 
 # internal LRU dictionary for preserving URLs on redirect
-date_cache = lrudict.LRUDict(maxduration=60, maxsize=1024)
+date_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
@@ -57,6 +57,7 @@ class Handler(socketserver.BaseRequestHandler):
 			elif ll[:21] == 'authorization: basic ':
 				# asset date code passed as username:password
 				auth = base64.b64decode(ll[21:])
+		original_date = effective_date
 
 		# get cached date for redirects, if available
 		effective_date = date_cache.get(effective_date + '\x00' + archived_url, effective_date)
@@ -134,6 +135,15 @@ class Handler(socketserver.BaseRequestHandler):
 
 			_print('[!] {0} {1}'.format(e.code, e.reason))
 			return self.error_page(http_version, e.code, e.reason)
+
+		# check if the date is within tolerance
+		if DATE_TOLERANCE is not None:
+			match = re.search('''//web\.archive\.org/web/([0-9]+)''', conn.geturl())
+			if match:
+				requested_date = match.group(1)
+				if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(DATE_TOLERANCE):
+					_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
+					return self.error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
 		
 		# get content type
 		content_type = conn.info().get('Content-Type')
@@ -265,6 +275,8 @@ class Handler(socketserver.BaseRequestHandler):
 			errorpage += 'This page was not archived due to a robots.txt block.'
 		elif code == 501: # method not implemented
 			errorpage += 'WaybackProxy only implements the GET method.'
+		elif code == 412: # outside of tolerance
+			errorpage += 'The earliest snapshot for this page is outside of the configured tolerance interval.'
 		else: # another error
 			errorpage += 'Unknown error. The Wayback Machine may be experiencing technical difficulties.'
 		
@@ -322,6 +334,65 @@ class Handler(socketserver.BaseRequestHandler):
 	def signature(self):
 		"""Return the server signature."""
 		return 'WaybackProxy on {0}'.format(socket.gethostname())
+
+	def wayback_to_datetime(self, date):
+		"""Convert a Wayback format date string to a datetime.datetime object."""
+
+		# parse the string
+		year = 1995
+		month = 12
+		day = 31
+		hour = 0
+		minute = 0
+		second = 0
+		if len(date) > 0:
+			year = int(date[:4])
+		if len(date) > 4:
+			month = int(date[4:6])
+		if len(date) > 6:
+			day = int(date[6:8])
+		if len(date) > 8:
+			hour = int(date[8:10])
+		if len(date) > 10:
+			minute = int(date[10:12])
+		if len(date) > 12:
+			second = int(date[12:14])
+
+		# sanitize the numbers
+		if month < 1:
+			month = 1
+		elif month > 12:
+			month = 12
+		if day < 1:
+			day = 1
+		elif day > 31:
+			day = 31
+		if hour > 23:
+			hour = 23
+		elif hour < 0:
+			hour = 0
+		if minute > 59:
+			minute = 59
+		elif minute < 0:
+			minute = 0
+		if second > 59:
+			second = 59
+		elif second < 0:
+			second = 0
+
+		# if the day is invalid for that month, work its way down
+		try:
+			dt = datetime.datetime(year, month, day, hour, minute, second) # max 31
+		except:
+			try:
+				dt = datetime.datetime(year, month, day - 1, hour, minute, second) # max 30
+			except:
+				try:
+					dt = datetime.datetime(year, month, day - 2, hour, minute, second) # max 29
+				except:
+					dt = datetime.datetime(year, month, day - 3, hour, minute, second) # max 28
+
+		return dt
 
 print_lock = threading.Lock()
 def _print(*args, linebreak=True):
