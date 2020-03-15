@@ -271,7 +271,7 @@ class Handler(socketserver.BaseRequestHandler):
 		"""Generate an error page."""
 		
 		# make error page
-		errorpage = '<html><head><title>{0} {1}</title></head><body><h1>{1}</h1><p>'.format(code, reason)
+		errorpage = '<html><head><title>{0} {1}</title><script language="javascript">if (window.self != window.top) {{ document.location.href = "about:blank"; }}</script></head><body><h1>{1}</h1><p>'.format(code, reason)
 		
 		# add code information
 		if code in (404, 508): # page not archived or redirect loop
