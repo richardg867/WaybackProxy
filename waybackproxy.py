@@ -313,7 +313,15 @@ class Handler(socketserver.BaseRequestHandler):
 		"""Generate an error page."""
 		
 		# make error page
-		errorpage = '<html><head><title>{0} {1}</title><script language="javascript">if (window.self != window.top) {{ document.location.href = "about:blank"; }}</script></head><body><h1>{1}</h1><p>'.format(code, reason)
+		errorpage  = '<html><head><title>{0} {1}</title>'.format(code, reason)
+		# IE's same-origin policy throws "Access is denied." inside frames
+		# loaded from a different origin. Use that to our advantage, even
+		# though regular frames are also affected. IE also doesn't recognize
+		# language="javascript1.4", so use 1.3 while blocking IE4 by detecting
+		# the lack of screenLeft as IE4 is quite noisy with script errors.
+		errorpage += '<script language="javascript1.3">if (window.screenLeft != null) { eval(\'try { var frameElement = window.frameElement; } catch (e) { document.location.href = "about:blank"; }\'); }</script>'
+		errorpage += '<script language="javascript">if (window.self != window.top && !(window.frameElement && window.frameElement.tagName == "FRAME")) { document.location.href = "about:blank"; }</script>'
+		errorpage += '</head><body><h1>{0}</h1><p>'.format(reason)
 		
 		# add code information
 		if code in (404, 508): # page not archived or redirect loop
