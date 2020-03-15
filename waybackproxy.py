@@ -115,15 +115,6 @@ class Handler(socketserver.BaseRequestHandler):
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)
 
 				conn = urllib.request.urlopen(request_url)
-
-			# check if the date is within tolerance
-			if DATE_TOLERANCE is not None:
-				match = re.search('''//web\.archive\.org/web/([0-9]+)''', conn.geturl())
-				if match:
-					requested_date = match.group(1)
-					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(DATE_TOLERANCE):
-						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
-						raise urllib.error.HTTPError(conn.geturl(), 412, 'Snapshot ' + requested_date + ' not available', conn.info(), conn)
 		except urllib.error.HTTPError as e:
 			# an error has been found
 
@@ -169,6 +160,16 @@ class Handler(socketserver.BaseRequestHandler):
 				archived_url = '/'.join(request_url.split('/')[5:])
 				_print('[r] [QI]', archived_url)
 				return self.redirect_page(http_version, archived_url, 301)
+
+			# check if the date is within tolerance
+			if DATE_TOLERANCE is not None:
+				match = re.search('''//web\.archive\.org/web/([0-9]+)''', conn.geturl())
+				if match:
+					requested_date = match.group(1)
+					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(DATE_TOLERANCE):
+						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
+						conn.close()
+						return self.error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
 
 			# consume all data
 			data = conn.read()
