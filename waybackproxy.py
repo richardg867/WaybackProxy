@@ -115,17 +115,30 @@ class Handler(socketserver.BaseRequestHandler):
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)
 
 				conn = urllib.request.urlopen(request_url)
+
+			# check if the date is within tolerance
+			if DATE_TOLERANCE is not None:
+				match = re.search('''//web\.archive\.org/web/([0-9]+)''', conn.geturl())
+				if match:
+					requested_date = match.group(1)
+					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(DATE_TOLERANCE):
+						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
+						raise urllib.error.HTTPError(conn.geturl(), 412, 'Snapshot ' + requested_date + ' not available', conn.info(), conn)
 		except urllib.error.HTTPError as e:
 			# an error has been found
 
-			if e.code in (403, 404):
-				# 403 or 404 => heuristically determine the static URL for some redirect scripts
-				match = re.search('''(?:\?|&)(?:target|trg|dest(?:ination)?|to|go)?(?:url)?=(http[^&]+)''', archived_url, re.IGNORECASE)
+			if e.code in (403, 404, 412):
+				# 403, 404 or tolerance exceeded => heuristically determine the static URL for some redirect scripts
+				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))(?:%2F|/).+)''', archived_url, re.IGNORECASE)
 				if not match:
-					match = re.search('''/(?:target|trg|dest(?:ination)?|to|go)?(?:url)?/(http.+)''', archived_url, re.IGNORECASE)
+					match = re.search('''(?:\?|&)(?:[^=]+)=((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))?(?:%2F|/)[^&]+)''', archived_url, re.IGNORECASE)
 				if match:
+					print(match.groups())
 					# we found it
 					new_url = urllib.parse.unquote_plus(match.group(1))
+					# add protocol if the URL is absolute but missing a protocol
+					if new_url[0] != '/' and '://' not in new_url:
+						new_url = 'http://' + new_url
 					_print('[r]', new_url)
 					return self.redirect_page(http_version, new_url)
 			elif e.code in (301, 302):
@@ -133,17 +146,9 @@ class Handler(socketserver.BaseRequestHandler):
 				_print('[!] Infinite redirect loop')
 				return self.error_page(http_version, 508, 'Infinite Redirect Loop')
 
-			_print('[!] {0} {1}'.format(e.code, e.reason))
+			if e.code != 412: # tolerance exceeded has its own error message above
+				_print('[!] {0} {1}'.format(e.code, e.reason))
 			return self.error_page(http_version, e.code, e.reason)
-
-		# check if the date is within tolerance
-		if DATE_TOLERANCE is not None:
-			match = re.search('''//web\.archive\.org/web/([0-9]+)''', conn.geturl())
-			if match:
-				requested_date = match.group(1)
-				if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(DATE_TOLERANCE):
-					_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
-					return self.error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
 		
 		# get content type
 		content_type = conn.info().get('Content-Type')
