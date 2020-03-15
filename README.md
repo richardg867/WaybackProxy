@@ -16,5 +16,11 @@ WaybackProxy is a HTTP proxy that sends all requests through the [Internet Archi
 
 ## Known issues and limitations
 
-* The Wayback Machine itself is not 100% reliable, especially when it comes to images on archived pages.
+* The Wayback Machine itself is not 100% reliable. Known issues include:
+  * Pages newer than the specified date (setting a specific YYYYMMDD date instead of a wider YYYYMM or YYYY helps with that);
+  * Random broken images;
+  * Strange 404 errors caused by bad server responses or incorrect URL capitalization at archival time;
+  * Infinite redirect loops;
+  * Server errors when it's having a bad day.
+* WaybackProxy will work around some redirection scripts (example: `http://example.com/redirect?to=http://...`) which are not archived by the Wayback Machine, but the destination URLs might not be archived as well.
 * WaybackProxy is not a generic proxy. The POST and CONNECT methods are not implemented.
