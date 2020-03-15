@@ -139,7 +139,13 @@ class Handler(socketserver.BaseRequestHandler):
 
 			if e.code != 412: # tolerance exceeded has its own error message above
 				_print('[!] {0} {1}'.format(e.code, e.reason))
-			return self.error_page(http_version, e.code, e.reason)
+
+			# If the memento Link header is present, this is a website error
+			# instead of a Wayback error. Pass it along if that's the case.
+			if 'Link' in e.headers:
+				conn = e
+			else:
+				return self.error_page(http_version, e.code, e.reason)
 		
 		# get content type
 		content_type = conn.info().get('Content-Type')
@@ -192,7 +198,13 @@ class Handler(socketserver.BaseRequestHandler):
 							conn = urllib.request.urlopen(request_url)
 						except urllib.error.HTTPError as e:
 							_print('[!]', e.code, e.reason)
-							return self.error_page(http_version, e.code, e.reason)
+							
+							# If the memento Link header is present, this is a website error
+							# instead of a Wayback error. Pass it along if that's the case.
+							if 'Link' in e.headers:
+								conn = e
+							else:
+								return self.error_page(http_version, e.code, e.reason)
 
 						content_type = conn.info().get('Content-Type')
 						if not CONTENT_TYPE_ENCODING and content_type.find(';') > -1: content_type = content_type[:content_type.find(';')]
@@ -274,7 +286,7 @@ class Handler(socketserver.BaseRequestHandler):
 		"""Generate an error page."""
 		
 		# make error page
-		errorpage = '<html><head><title>{0} {1}</title><script language="javascript">if (window.self != window.top) {{ document.location.href = "about:blank"; }}</script></head><body><h1>{1}</h1><p>'.format(code, reason)
+		errorpage = '<html><head><title>{0} {1}</title><script language="javascript">if (window.self != window.top && !(window.frameElement && window.frameElement.tagName == "FRAME")) {{ document.location.href = "about:blank"; }}</script></head><body><h1>{1}</h1><p>'.format(code, reason)
 		
 		# add code information
 		if code in (404, 508): # page not archived or redirect loop
