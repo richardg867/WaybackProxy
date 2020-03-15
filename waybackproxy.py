@@ -315,7 +315,9 @@ class Handler(socketserver.BaseRequestHandler):
 		if query != '': # handle any parameters that may have been sent
 			parsed = urllib.parse.parse_qs(query)
 			
-			if 'date' in parsed: DATE = parsed['date'][0]
+			if 'date' in parsed and DATE != parsed['date'][0]:
+				DATE = parsed['date'][0]
+				date_cache.clear()
 			GEOCITIES_FIX = 'gcFix' in parsed
 			QUICK_IMAGES = 'quickImages' in parsed
 			CONTENT_TYPE_ENCODING = 'ctEncoding' in parsed
