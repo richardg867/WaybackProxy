@@ -226,9 +226,7 @@ class Handler(socketserver.BaseRequestHandler):
 					#data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([^/]+)/', b'', data)
 					def add_to_date_cache(match):
 						orig_url = match.group(2)
-						new_date = match.group(1)
-						if len(new_date) > 14: # only cache asset URLs
-							date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = new_date.decode('ascii', 'ignore')
+						date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
 						return orig_url
 					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([^/]+)/([^"\'#<>]+)', add_to_date_cache, data)
 			elif mode == 1: # oocities
