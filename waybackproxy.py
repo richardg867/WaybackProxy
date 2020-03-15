@@ -270,10 +270,10 @@ class Handler(socketserver.BaseRequestHandler):
 				# fix links
 				data = re.sub(b'//([^.]*)\.oocities\.com/', b'//\\1.geocities.com/', data, flags=re.S)
 
-			self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\nETag: "{2}"\r\n\r\n'.format(http_version, content_type, request_url.replace('"', '')).encode('ascii', 'ignore'))
+			self.send_response_headers(conn, http_version, content_type, request_url)
 			self.request.sendall(data)
 		else: # other data
-			self.request.sendall('{0} 200 OK\r\nContent-Type: {1}\r\nETag: "{2}"\r\n\r\n'.format(http_version, content_type, request_url.replace('"', '')).encode('ascii', 'ignore'))
+			self.send_response_headers(conn, http_version, content_type, request_url)
 
 			while True:
 				data = conn.read(1024)
@@ -281,12 +281,39 @@ class Handler(socketserver.BaseRequestHandler):
 				self.request.sendall(data)
 		
 		self.request.close()
+
+	def send_response_headers(self, conn, http_version, content_type, request_url):
+		"""Generate and send the response headers."""
+
+		response = http_version
+
+		# pass the error code if there is one
+		if isinstance(conn, urllib.error.HTTPError):
+			response += '{0} {1}'.format(conn.code, conn.reason.replace('\n', ' '))
+		else:
+			response += '200 OK'
+
+		# add content type, and the ETag for caching
+		response += '\r\nContent-Type: ' + content_type + '\r\nETag: "' + request_url.replace('"', '') + '"\r\n'
+
+		# add X-Archive-Orig-* headers
+		headers = conn.info()
+		for header in headers:
+			if header.find('X-Archive-Orig-') == 0:
+				orig_header = header[15:]
+				# blacklist certain headers which may alter the client
+				if orig_header.lower() not in ('connection', 'location', 'content-type', 'etag', 'authorization', 'set-cookie'):
+					response += orig_header + ': ' + headers[header] + '\r\n'
+
+		# finish and send the request
+		response += '\r\n'
+		self.request.sendall(response.encode('ascii', 'ignore'))
 	
 	def error_page(self, http_version, code, reason):
 		"""Generate an error page."""
 		
 		# make error page
-		errorpage = '<html><head><title>{0} {1}</title><script language="javascript">if (window.self != window.top && !(window.frameElement && window.frameElement.tagName == "FRAME")) {{ document.location.href = "about:blank"; }}</script></head><body><h1>{1}</h1><p>'.format(code, reason)
+		errorpage = '<html><head><title>{0} {1}</title><script language="javascript">if (window.self != window.top) {{ document.location.href = "about:blank"; }}</script></head><body><h1>{1}</h1><p>'.format(code, reason)
 		
 		# add code information
 		if code in (404, 508): # page not archived or redirect loop
