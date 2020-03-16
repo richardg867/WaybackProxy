@@ -167,7 +167,11 @@ class Handler(socketserver.BaseRequestHandler):
 		mode = 0
 		if GEOCITIES_FIX and hostname in ['www.oocities.org', 'www.oocities.com']: mode = 1
 		
-		if 'text/html' in content_type: # HTML
+		# Wayback will add its HTML to anything it thinks is HTML
+		guessed_content_type = conn.info().get('X-Archive-Guessed-Content-Type')
+		if not guessed_content_type:
+			guessed_content_type = content_type
+		if 'text/html' in guessed_content_type:
 			# Some dynamically generated links may end up pointing to
 			# web.archive.org. Correct that by redirecting the Wayback
 			# portion of the URL away if it ends up being HTML consumed
