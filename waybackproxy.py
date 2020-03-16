@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import base64, datetime, lrudict, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
 from config import *
 
@@ -27,8 +27,37 @@ class Handler(socketserver.BaseRequestHandler):
 			# only GET is implemented
 			return self.error_page(http_version, 501, 'Not Implemented')
 		
+		# read out the headers
+		request_host = None
+		pac_host = '" + location.host + ":' + str(LISTEN_PORT) # may not actually work
+		effective_date = DATE
+		auth = None
+		while line.rstrip('\r\n') != '':
+			line = f.readline()
+			ll = line.lower()
+			if ll[:6] == 'host: ':
+				pac_host = request_host = line[6:].rstrip('\r\n')
+				if ':' not in pac_host: # who would run this on port 80 anyway?
+					pac_host += ':80'
+			elif ll[:21] == 'x-waybackproxy-date: ':
+				# API for a personal project of mine
+				effective_date = line[21:].rstrip('\r\n')
+			elif ll[:21] == 'authorization: basic ':
+				# asset date code passed as username:password
+				auth = base64.b64decode(ll[21:])
+
 		# parse the URL
-		request_url = archived_url = split[1]
+		pac_file_paths = ('/proxy.pac', '/wpad.dat', '/wpad.da')
+		if split[1][0] == '/' and split[1] not in pac_file_paths:
+			# just a path (not corresponding to a PAC file) => transparent proxy
+			# Host header and therefore HTTP/1.1 are required
+			if not request_host:
+				return self.error_page(http_version, 400, 'Host header missing')
+			archived_url = 'http://' + request_host + split[1]
+		else:
+			# full URL => explicit proxy
+			archived_url = split[1]
+		request_url = archived_url
 		parsed = urllib.parse.urlparse(request_url)
 		
 		# make a path
@@ -39,27 +68,9 @@ class Handler(socketserver.BaseRequestHandler):
 		# get the hostname for later
 		host = parsed.netloc.split(':')
 		hostname = host[0]
-		
-		# read out the headers, saving the PAC file host
-		pac_host = '" + location.host + ":' + str(LISTEN_PORT) # may not actually work
-		effective_date = DATE
-		auth = None
-		while line.rstrip('\r\n') != '':
-			line = f.readline()
-			ll = line.lower()
-			if ll[:6] == 'host: ':
-				pac_host = line[6:].rstrip('\r\n')
-				if ':' not in pac_host: # who would run this on port 80 anyway?
-					pac_host += ':80'
-			elif ll[:21] == 'x-waybackproxy-date: ':
-				# API for a personal project of mine
-				effective_date = line[21:].rstrip('\r\n')
-			elif ll[:21] == 'authorization: basic ':
-				# asset date code passed as username:password
-				auth = base64.b64decode(ll[21:])
-		original_date = effective_date
 
 		# get cached date for redirects, if available
+		original_date = effective_date
 		effective_date = date_cache.get(effective_date + '\x00' + archived_url, effective_date)
 
 		# get date from username:password, if available
@@ -67,7 +78,7 @@ class Handler(socketserver.BaseRequestHandler):
 			effective_date = auth.replace(':', '')
 
 		try:
-			if path in ('/proxy.pac', '/wpad.dat', '/wpad.da'):
+			if path in pac_file_paths:
 				# PAC file to bypass QUICK_IMAGES requests
 				pac  = http_version.encode('ascii', 'ignore') + b''' 200 OK\r\n'''
 				pac += b'''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
@@ -332,6 +343,8 @@ class Handler(socketserver.BaseRequestHandler):
 			errorpage += 'WaybackProxy only implements the GET method.'
 		elif code == 412: # outside of tolerance
 			errorpage += 'The earliest snapshot for this page is outside of the configured tolerance interval.'
+		elif code == 400 and reason == 'Host header missing': # no host header in transparent mode
+			errorpage += 'WaybackProxy\'s transparent mode requires an HTTP/1.1 compliant client.'
 		else: # another error
 			errorpage += 'Unknown error. The Wayback Machine may be experiencing technical difficulties.'
 		
