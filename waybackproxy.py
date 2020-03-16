@@ -240,11 +240,11 @@ class Handler(socketserver.BaseRequestHandler):
 						return self.redirect_page(http_version, archived_url, redirect_code)
 
 				# pre-toolbar scripts and CSS
-				data = re.sub(b'<script src="//archive\.org/(?:.*)<!-- End Wayback Rewrite JS Include -->', b'', data, flags=re.S)
+				data = re.sub(b'<script src="//archive\.org/(?:.*)<!-- End Wayback Rewrite JS Include -->(?:\r)?\n', b'', data, flags=re.S)
 				# toolbar
 				data = re.sub(b'<!-- BEGIN WAYBACK TOOLBAR INSERT -->(?:.*)<!-- END WAYBACK TOOLBAR INSERT -->', b'', data, flags=re.S)
 				# comments on footer
-				data = re.sub(b'\n<!--\n     FILE ARCHIVED (?:.*)$', b'', data, flags=re.S)
+				data = re.sub(b'<!--(?:\r)?\n     FILE ARCHIVED (?:.*)$', b'', data, flags=re.S)
 				# fix base tag
 				data = re.sub(b'(<base (?:[^>]*)href=(?:["\'])?)(?:(?:http(?:s)?:)?//web.archive.org)?/web/(?:[^/]+)/', b'\\1', data, flags=re.I + re.S)
 
