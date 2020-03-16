@@ -317,7 +317,7 @@ class Handler(socketserver.BaseRequestHandler):
 			if header.find('X-Archive-Orig-') == 0:
 				orig_header = header[15:]
 				# blacklist certain headers which may alter the client
-				if orig_header.lower() not in ('connection', 'location', 'content-type', 'etag', 'authorization', 'set-cookie'):
+				if orig_header.lower() not in ('connection', 'location', 'content-type', 'content-length', 'etag', 'authorization', 'set-cookie'):
 					response += orig_header + ': ' + headers[header] + '\r\n'
 
 		# finish and send the request
