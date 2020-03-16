@@ -11,7 +11,7 @@ WaybackProxy is a HTTP proxy that sends all requests through the [Internet Archi
 3. Set up your retro browser:
 	* If your browser supports proxy auto-configuration, set the auto-configuration URL to `http://ip:port/proxy.pac` where `ip` is the IP of the system running WaybackProxy and `port` is the proxy's port (8888 by default).
 	* If proxy auto-configuration is not supported or fails to work, set the browser to use an HTTP proxy at that IP and port instead.
-	* Transparent proxying is also supported for advanced users. No configuration to WaybackProxy itself is required. Client machines must be pointed at a dummy DNS server so they can find the proxy; `dnsmasq -A "/#/ip"` is a good choice.
+	* Transparent proxying is also supported for advanced users. No configuration to WaybackProxy itself is required. In transparent mode, client machines must be pointed at a dummy DNS server so they can find the proxy; `dnsmasq -A "/#/ip"` is a good choice.
 4. Try it out! You can edit most settings that are in `config.py` by browsing to http://web.archive.org while on the proxy, although you must edit `config.py` to make them permanent.
 5. Press Ctrl+C to stop
 
