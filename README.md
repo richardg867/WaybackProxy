@@ -25,3 +25,8 @@ WaybackProxy is a HTTP proxy that sends all requests through the [Internet Archi
   * Server errors when it's having a bad day.
 * WaybackProxy will work around some redirection scripts (example: `http://example.com/redirect?to=http://...`) which are not archived by the Wayback Machine, but the destination URLs might not be archived as well.
 * WaybackProxy is not a generic proxy. The POST and CONNECT methods are not implemented.
+
+## Other links
+
+* [Donate to the Internet Archive](https://archive.org/donate/), they need your help to keep the Wayback Machine and its petabytes upon petabytes of data available to everyone at no cost.
+* [Check out 86Box](https://86box.github.io/), the emulator I use for testing WaybackProxy on older browsers.
