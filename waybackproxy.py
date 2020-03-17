@@ -131,9 +131,9 @@ class Handler(socketserver.BaseRequestHandler):
 
 			if e.code in (403, 404, 412):
 				# 403, 404 or tolerance exceeded => heuristically determine the static URL for some redirect scripts
-				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))(?:%2F|/).+)''', archived_url, re.IGNORECASE)
+				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))(?:%2F|/).+)''', archived_url, re.I)
 				if not match:
-					match = re.search('''(?:\?|&)(?:[^=]+)=((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))?(?:%2F|/)[^&]+)''', archived_url, re.IGNORECASE)
+					match = re.search('''(?:\?|&)(?:[^=]+)=((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))?(?:%2F|/)[^&]+)''', archived_url, re.I)
 				if match:
 					print(match.groups())
 					# we found it
@@ -260,7 +260,7 @@ class Handler(socketserver.BaseRequestHandler):
 					# date codes. This taints the HTML with web.archive.org
 					# URLs. QUICK_IMAGES=2 uses the original URLs with an added
 					# username:password, which taints less but is not supported
-					# by all browsers - IE6 notably kills the whole page if it
+					# by all browsers - IE notably kills the whole page if it
 					# sees an iframe pointing to an invalid URL.
 					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)/([^:]+)://',
 						QUICK_IMAGES == 2 and b'\\3://\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3://', data)

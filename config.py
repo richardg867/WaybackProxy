@@ -1,8 +1,9 @@
-# Listen port for the HTTP proxy
+# Listen port for the HTTP proxy.
 LISTEN_PORT = 8888
 
-# Date to get pages from Wayback (YYYY, YYYYMM or YYYYMMDD)
-DATE = '1998'
+# Date to get pages from Wayback. YYYYMMDD, YYYYMM and YYYY formats are
+# accepted, the more specific the better.
+DATE = '20011025' # <- Windows XP release date in case you're wondering
 
 # Allow the client to load pages and assets up to X days after DATE.
 # Set to None to disable this restriction.
@@ -14,8 +15,8 @@ GEOCITIES_FIX = True
 # Use the Wayback-tampered URL as a shortcut when loading images.
 # May result in faster loads, but all images will point to 
 # http://web.archive.org/... as a result. Set this value to 2 to enable an
-# experimental mode using username:passwords on top of the original URLs
-# instead (not supported by Internet Explorer and some other browsers).
+# experimental mode using authentication on top of the original URLs instead
+# (which is not supported by Internet Explorer and some other browsers).
 QUICK_IMAGES = True
 
 # Allow the Content-Type header to contain an encoding. Some old browsers
@@ -23,5 +24,5 @@ QUICK_IMAGES = True
 # False if you're using one of them.
 CONTENT_TYPE_ENCODING = True
 
-# Don't print log entries
+# Disables logging if set to True.
 SILENT = False
