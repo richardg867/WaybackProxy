@@ -95,8 +95,11 @@ class Handler(socketserver.BaseRequestHandler):
 				return
 			elif hostname == 'web.archive.org':
 				if path[:5] != '/web/':
-					# launch settings
-					return self.handle_settings(parsed.query)
+					# launch settings if enabled
+					if SETTINGS_PAGE:
+						return self.handle_settings(parsed.query)
+					else:
+						return self.error_page(http_version, 404, 'Not Found')
 				else:
 					# pass-through requests to web.archive.org
 					# required for QUICK_IMAGES
@@ -394,6 +397,8 @@ class Handler(socketserver.BaseRequestHandler):
 			if 'date' in parsed and DATE != parsed['date'][0]:
 				DATE = parsed['date'][0]
 				date_cache.clear()
+			if 'dateTolerance' in parsed and DATE_TOLERANCE != parsed['dateTolerance'][0]:
+				DATE_TOLERANCE = parsed['dateTolerance'][0]
 			GEOCITIES_FIX = 'gcFix' in parsed
 			QUICK_IMAGES = 'quickImages' in parsed
 			CONTENT_TYPE_ENCODING = 'ctEncoding' in parsed
@@ -402,9 +407,12 @@ class Handler(socketserver.BaseRequestHandler):
 		settingspage  = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n'
 		settingspage += '<html><head><title>WaybackProxy Settings</title></head><body><p><b>'
 		settingspage += self.signature()
-		settingspage += '</b></p><form method="get" action="/"><p>Date to get pages from: <input type="text" name="date" size="8" value="'
+		settingspage += '</b></p><form method="get" action="/">'
+		settingspage += '<p>Date to get pages from: <input type="text" name="date" size="8" value="'
 		settingspage += DATE
-		settingspage += '"><br><input type="checkbox" name="gcFix"'
+		settingspage += '"><p>Date tolerance: <input type="text" name="dateTolerance" size="8" value="'
+		settingspage += DATE_TOLERANCE
+		settingspage += '"> days<br><input type="checkbox" name="gcFix"'
 		if GEOCITIES_FIX: settingspage += ' checked'
 		settingspage += '> Geocities Fix<br><input type="checkbox" name="quickImages"'
 		if QUICK_IMAGES: settingspage += ' checked'

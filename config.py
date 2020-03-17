@@ -9,7 +9,7 @@ DATE = '20011025' # <- Windows XP release date in case you're wondering
 # Set to None to disable this restriction.
 DATE_TOLERANCE = 365
 
-# Send Geocities requests to oocities.org
+# Send Geocities requests to oocities.org if set to True.
 GEOCITIES_FIX = True
 
 # Use the Wayback-tampered URL as a shortcut when loading images.
@@ -26,3 +26,6 @@ CONTENT_TYPE_ENCODING = True
 
 # Disables logging if set to True.
 SILENT = False
+
+# Enables the settings page on http://web.archive.org if set to True.
+SETTINGS_PAGE = True
