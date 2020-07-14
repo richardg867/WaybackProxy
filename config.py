@@ -12,12 +12,20 @@ DATE_TOLERANCE = 365
 # Send Geocities requests to oocities.org if set to True.
 GEOCITIES_FIX = True
 
-# Use the Wayback-tampered URL as a shortcut when loading images.
-# May result in faster loads, but all images will point to 
-# http://web.archive.org/... as a result. Set this value to 2 to enable an
+# Use the original Wayback Machine URL as a shortcut when loading images.
+# May result in faster page loads, but all images will point to
+# http://web.archive.org/... as a side effect. Set this value to 2 to enable an
 # experimental mode using authentication on top of the original URLs instead
 # (which is not supported by Internet Explorer and some other browsers).
 QUICK_IMAGES = True
+
+# Use the Wayback Machine Availability API to find the closest available
+# snapshot to the desired date, instead of directly requesting that date. Helps
+# in situations where an image returns a server error on the desired date, but
+# is available at an earlier date. As a side effect, pages will take longer to
+# load due to the added API call. This option as no effect when QUICK_IMAGES is
+# used alongside the PAC file.
+WAYBACK_API = True
 
 # Allow the Content-Type header to contain an encoding. Some old browsers
 # (Mosaic?) don't understand that and fail to load anything - set this to

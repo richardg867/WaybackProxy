@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-import base64, datetime, lrudict, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
+import base64, datetime, json, lrudict, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
 from config import *
 
 # internal LRU dictionary for preserving URLs on redirect
 date_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
+
+# internal LRU dictionary for date availability
+availability_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024) if WAYBACK_API else None
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
@@ -13,7 +16,7 @@ class Handler(socketserver.BaseRequestHandler):
 	"""Main request handler."""
 	def handle(self):
 		"""Handle a request."""
-		global DATE
+		global availability_cache
 		
 		# readline is pretty convenient
 		f = self.request.makefile()
@@ -77,6 +80,7 @@ class Handler(socketserver.BaseRequestHandler):
 		if auth:
 			effective_date = auth.replace(':', '')
 
+		# effectively handle the request
 		try:
 			if path in pac_file_paths:
 				# PAC file to bypass QUICK_IMAGES requests
@@ -105,14 +109,6 @@ class Handler(socketserver.BaseRequestHandler):
 					# required for QUICK_IMAGES
 					archived_url = '/'.join(request_url.split('/')[5:])
 					_print('[>] [QI] {0}'.format(archived_url))
-					try:
-						conn = urllib.request.urlopen(request_url)
-					except urllib.error.HTTPError as e:
-						if e.code == 404:
-							# Try this file on another date, might be redundant
-							return self.redirect_page(http_version, archived_url)
-						else:
-							raise e
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
 				# apply GEOCITIES_FIX and pass it through
 				_print('[>] {0}'.format(archived_url))
@@ -120,15 +116,55 @@ class Handler(socketserver.BaseRequestHandler):
 				split = archived_url.split('/')
 				hostname = split[2] = 'www.oocities.org'
 				request_url = '/'.join(split)
-				
-				conn = urllib.request.urlopen(request_url)
 			else:
 				# get from Wayback
 				_print('[>] {0}'.format(archived_url))
 
-				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)
+				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)				
 
-				conn = urllib.request.urlopen(request_url)
+			if availability_cache is not None:
+				# are we requesting from Wayback?
+				split = request_url.split('/')
+
+				# if so, get the closest available date from Wayback's API, to avoid archived 404 pages and other site errors
+				if split[2] == 'web.archive.org':
+					# remove extraneous :80 from URL
+					if ':' in split[5]:
+						if split[7][-3:] == ':80':
+							split[7] = split[7][:-3]
+					elif split[5][-3:] == ':80':
+						split[5] = split[5][:-3]
+
+					# check availability LRU cache
+					availability_url = '/'.join(split[5:])
+					new_url = availability_cache.get(availability_url, None)
+					if new_url:
+						# in cache => replace URL immediately
+						request_url = new_url
+					else:
+						# not in cache => contact API
+						try:
+							availability = json.loads(urllib.request.urlopen('https://archive.org/wayback/available?url=' + urllib.parse.quote_plus(availability_url) + '&timestamp=' + effective_date[:14], timeout=10).read())
+							closest = availability.get('archived_snapshots', {}).get('closest', {})
+							new_date = closest.get('timestamp', None)
+						except:
+							_print('[!] Failed to fetch Wayback availability data')
+							new_date = None
+
+						if new_date and new_date != effective_date[:14]:
+							# returned date is different
+							new_url = closest['url']
+
+							# add asset tag if one is present in the original URL
+							if len(effective_date) > 14:
+								split = new_url.split('/')
+								split[4] += effective_date[14:]
+								new_url = '/'.join(split)
+
+							# replace URL and add it to the availability cache
+							request_url = availability[availability_url] = new_url
+
+			conn = urllib.request.urlopen(request_url)
 		except urllib.error.HTTPError as e:
 			# an error has been found
 
@@ -138,7 +174,6 @@ class Handler(socketserver.BaseRequestHandler):
 				if not match:
 					match = re.search('''(?:\?|&)(?:[^=]+)=((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))?(?:%2F|/)[^&]+)''', archived_url, re.I)
 				if match:
-					print(match.groups())
 					# we found it
 					new_url = urllib.parse.unquote_plus(match.group(1))
 					# add protocol if the URL is absolute but missing a protocol
@@ -269,7 +304,8 @@ class Handler(socketserver.BaseRequestHandler):
 						QUICK_IMAGES == 2 and b'\\3://\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3://', data)
 					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([0-9]+)/', b'', data)
 				else:
-					#data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([^/]+)/', b'', data)
+					# Remove asset URLs while simultaneously adding them to the
+					# LRU cache with their respective date.
 					def add_to_date_cache(match):
 						orig_url = match.group(2)
 						date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
@@ -397,6 +433,7 @@ class Handler(socketserver.BaseRequestHandler):
 			if 'date' in parsed and DATE != parsed['date'][0]:
 				DATE = parsed['date'][0]
 				date_cache.clear()
+				availability_cache.clear()
 			if 'dateTolerance' in parsed and DATE_TOLERANCE != parsed['dateTolerance'][0]:
 				DATE_TOLERANCE = parsed['dateTolerance'][0]
 			GEOCITIES_FIX = 'gcFix' in parsed
