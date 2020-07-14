@@ -23,8 +23,8 @@ QUICK_IMAGES = True
 # snapshot to the desired date, instead of directly requesting that date. Helps
 # in situations where an image returns a server error on the desired date, but
 # is available at an earlier date. As a side effect, pages will take longer to
-# load due to the added API call. This option as no effect when QUICK_IMAGES is
-# used alongside the PAC file.
+# load due to the added API call. If enabled, this option will disable the
+# QUICK_IMAGES bypass mechanism built into the PAC file.
 WAYBACK_API = True
 
 # Allow the Content-Type header to contain an encoding. Some old browsers

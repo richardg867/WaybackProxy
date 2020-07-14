@@ -40,7 +40,7 @@ class Handler(socketserver.BaseRequestHandler):
 			ll = line.lower()
 			if ll[:6] == 'host: ':
 				pac_host = request_host = line[6:].rstrip('\r\n')
-				if ':' not in pac_host: # who would run this on port 80 anyway?
+				if ':' not in pac_host: # explicitly specify port if running on port 80
 					pac_host += ':80'
 			elif ll[:21] == 'x-waybackproxy-date: ':
 				# API for a personal project of mine
@@ -83,16 +83,17 @@ class Handler(socketserver.BaseRequestHandler):
 		# effectively handle the request
 		try:
 			if path in pac_file_paths:
-				# PAC file to bypass QUICK_IMAGES requests
+				# PAC file to bypass QUICK_IMAGES requests if WAYBACK_API is not enabled
 				pac  = http_version.encode('ascii', 'ignore') + b''' 200 OK\r\n'''
 				pac += b'''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
 				pac += b'''\r\n'''
 				pac += b'''function FindProxyForURL(url, host)\r\n'''
 				pac += b'''{\r\n'''
-				pac += b'''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
-				pac += b'''	{\r\n'''
-				pac += b'''		return "DIRECT";\r\n'''
-				pac += b'''	}\r\n'''
+				if not availability_cache:
+					pac += b'''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
+					pac += b'''	{\r\n'''
+					pac += b'''		return "DIRECT";\r\n'''
+					pac += b'''	}\r\n'''
 				pac += b'''	return "PROXY ''' + pac_host.encode('ascii', 'ignore') + b'''";\r\n'''
 				pac += b'''}\r\n'''
 				self.request.sendall(pac)
@@ -105,7 +106,7 @@ class Handler(socketserver.BaseRequestHandler):
 					else:
 						return self.error_page(http_version, 404, 'Not Found')
 				else:
-					# pass-through requests to web.archive.org
+					# pass requests through to web.archive.org
 					# required for QUICK_IMAGES
 					archived_url = '/'.join(request_url.split('/')[5:])
 					_print('[>] [QI] {0}'.format(archived_url))
