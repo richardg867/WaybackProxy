@@ -236,6 +236,10 @@ class Handler(socketserver.BaseRequestHandler):
 			# patch the page
 			if mode == 0: # wayback
 				if b'<title>Wayback Machine</title>' in data:
+					if b'<p>This URL has been excluded from the Wayback Machine.</p>' in data:
+						# exclusion error (robots.txt?)
+						return self.error_page(http_version, 403, 'URL excluded')
+
 					match = re.search(b'<iframe id="playback" src="((?:(?:http(?:s)?:)?//web.archive.org)?/web/[^"]+)"', data)
 					if match:
 						# media playback iframe
@@ -380,8 +384,8 @@ class Handler(socketserver.BaseRequestHandler):
 		# add code information
 		if code in (404, 508): # page not archived or redirect loop
 			errorpage += 'This page may not be archived by the Wayback Machine.'
-		elif code == 403: # not crawled due to robots.txt
-			errorpage += 'This page was not archived due to a robots.txt block.'
+		elif code == 403: # not crawled due to exclusion
+			errorpage += 'This page was not archived due to a Wayback Machine exclusion.'
 		elif code == 501: # method not implemented
 			errorpage += 'WaybackProxy only implements the GET method.'
 		elif code == 412: # outside of tolerance
