@@ -36,10 +36,10 @@ class Handler(socketserver.BaseRequestHandler):
 		
 		# read request line
 		reqline = line = f.readline()
-		split = line.rstrip().split()
+		split = line.rstrip().split(' ')
 		http_version = len(split) > 2 and split[2] or 'HTTP/0.9'
 
-		if split[0] != 'GET':
+		if len(split) < 2 or split[0] != 'GET':
 			# only GET is implemented
 			return self.error_page(http_version, 501, 'Not Implemented')
 
@@ -105,7 +105,7 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += '''function FindProxyForURL(url, host)\r\n'''
 				pac += '''{\r\n'''
 				if self.shared_state.availability_cache == None:
-					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/*if_/*"))\r\n'''
+					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
 					pac += '''	{\r\n'''
 					pac += '''		return "DIRECT";\r\n'''
 					pac += '''	}\r\n'''
@@ -115,14 +115,13 @@ class Handler(socketserver.BaseRequestHandler):
 				return
 			elif hostname == 'web.archive.org':
 				if path[:5] != '/web/':
-					# launch settings if enabled
+					# Launch settings if enabled.
 					if SETTINGS_PAGE:
 						return self.handle_settings(parsed.query)
 					else:
 						return self.error_page(http_version, 404, 'Not Found')
 				else:
-					# pass requests through to web.archive.org
-					# required for QUICK_IMAGES
+					# Pass requests through to web.archive.org. Required for QUICK_IMAGES.
 					archived_url = '/'.join(request_url.split('/')[5:])
 					_print('[>] [QI] {0}'.format(archived_url))
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
@@ -428,7 +427,7 @@ class Handler(socketserver.BaseRequestHandler):
 				padding += ' ' * remainder
 			padding += '-->'
 			errorpage += padding
-		
+
 		# send error page and stop
 		self.request.sendall('{0} {1} {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, reason, len(errorpage), errorpage).encode('utf8', 'ignore'))
 		self.request.close()
@@ -449,12 +448,12 @@ class Handler(socketserver.BaseRequestHandler):
 	
 	def handle_settings(self, query):
 		"""Generate the settings page."""
-	
+
 		global DATE, DATE_TOLERANCE, GEOCITIES_FIX, QUICK_IMAGES, WAYBACK_API, CONTENT_TYPE_ENCODING, SILENT, SETTINGS_PAGE
-		
+
 		if query != '': # handle any parameters that may have been sent
 			parsed = urllib.parse.parse_qs(query)
-			
+
 			if 'date' in parsed and DATE != parsed['date'][0]:
 				DATE = parsed['date'][0]
 				self.shared_state.date_cache.clear()
