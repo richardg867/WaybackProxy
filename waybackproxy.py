@@ -104,7 +104,7 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += '''\r\n'''
 				pac += '''function FindProxyForURL(url, host)\r\n'''
 				pac += '''{\r\n'''
-				if not self.shared_state.availability_cache:
+				if self.shared_state.availability_cache == None:
 					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/*if_/*"))\r\n'''
 					pac += '''	{\r\n'''
 					pac += '''		return "DIRECT";\r\n'''
@@ -138,7 +138,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)				
 
-			if self.shared_state.availability_cache is not None:
+			if self.shared_state.availability_cache != None:
 				# are we requesting from Wayback?
 				split = request_url.split('/')
 
@@ -178,7 +178,7 @@ class Handler(socketserver.BaseRequestHandler):
 								new_url = '/'.join(split)
 
 							# replace URL and add it to the availability cache
-							request_url = availability[availability_url] = new_url
+							request_url = self.shared_state.availability_cache[availability_url] = new_url
 
 			conn = urllib.request.urlopen(request_url)
 		except urllib.error.HTTPError as e:
@@ -284,7 +284,7 @@ class Handler(socketserver.BaseRequestHandler):
 							content_type = content_type[:content_type.find(';')]
 						data = conn.read()
 
-				if b'<title></title>' in data and b'<h1><span>Internet Archive\'s Wayback Machine</span></h1>' in data:
+				if b'<title></title>' in data and b'<span class="label style-scope media-button"><!---->Wayback Machine<!----></span>' in data:
 					match = re.search(b'''<p class="impatient"><a href="(?:(?:https?:)?//web\\.archive\\.org)?/web/([^/]+)/([^"]+)">Impatient\\?</a></p>''', data)
 					if match:
 						# wayback redirect page, follow it
