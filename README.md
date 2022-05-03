@@ -28,6 +28,39 @@ WaybackProxy is a retro-friendly HTTP proxy which retrieves pages from the [Inte
 * WaybackProxy is not a generic proxy. The POST and CONNECT methods are not implemented.
 * Transparent proxying mode requires HTTP/1.1 and therefore cannot be used with some really old (pre-1996) browsers. Use standard mode with such browsers.
 
+## Docker Container
+
+A Dockerfile is included that allows you to run WaybackProxy from a docker container. 
+
+### Environment Variables
+
+When deploying via Docker, the config.py script can be customized by specifying environment variables when creating the docker container. The environment variables match the example config.py script in this repository. Below is a complete list:
+
+| Parameter        | Default | Description                            |
+|------------------|----------------------------------------|
+| `LISTEN_PORT` | 8888 | Listen port for the HTTP proxy |
+| `DATE` | 20011025 | Date to get pages from Wayback. YYYYMMDD, YYYYMM and YYYY formats are accepted, the more specific the better.|
+| `DATE_TOLERANCE` | 365 | Allow the client to load pages and assets up to X days after DATE. Set to None to disable this restriction.|
+| `GEOCITIES_FIX` | True | Send Geocities requests to oocities.org if set to True. |
+| `QUICK_IMAGES` | True | Use the original Wayback Machine URL as a shortcut when loading images. |
+| `WAYBACK_API` | True | Use the Wayback Machine Availability API to find the closest available snapshot to the desired date, instead of directly requesting that date.|
+| `CONTENT_TYPE_ENCODING` | True | Allow the Content-Type header to contain an encoding |
+| `SILENT` | True | Disables logging to STDOUT if set to True |
+| `SETTINGS_PAGE` | True | Enables the settings page on http://web.archive.org if set to True |
+
+### Example docker commands
+
+To build:
+
+```bash
+docker build --no-cache -t waybackproxy .
+```
+To run:
+
+```bash
+docker run --rm -it -e DATE=20011225 -p 8888:8888 waybackproxy
+```
+
 ## Other links
 
 * [Donate to the Internet Archive](https://archive.org/donate/), they need your help to keep the Wayback Machine and its petabytes upon petabytes of data available to everyone for free with no ads.
