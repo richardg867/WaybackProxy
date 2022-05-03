@@ -105,7 +105,7 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += '''function FindProxyForURL(url, host)\r\n'''
 				pac += '''{\r\n'''
 				if not self.shared_state.availability_cache:
-					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
+					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/*if_/*"))\r\n'''
 					pac += '''	{\r\n'''
 					pac += '''		return "DIRECT";\r\n'''
 					pac += '''	}\r\n'''
