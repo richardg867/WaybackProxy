@@ -37,7 +37,7 @@ A Dockerfile is included that allows you to run WaybackProxy from a docker conta
 When deploying via Docker, the config.py script can be customized by specifying environment variables when creating the docker container. The environment variables match the example config.py script in this repository. Below is a complete list:
 
 | Parameter        | Default | Description                            |
-|------------------|----------------------------------------|
+|------------------|---------|----------------------------------------|
 | `LISTEN_PORT` | 8888 | Listen port for the HTTP proxy |
 | `DATE` | 20011025 | Date to get pages from Wayback. YYYYMMDD, YYYYMM and YYYY formats are accepted, the more specific the better.|
 | `DATE_TOLERANCE` | 365 | Allow the client to load pages and assets up to X days after DATE. Set to None to disable this restriction.|
