@@ -89,7 +89,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 		# get cached date for redirects, if available
 		original_date = effective_date
-		effective_date = self.shared_state.date_cache.get(effective_date + '\x00' + archived_url, effective_date)
+		effective_date = self.shared_state.date_cache.get(str(effective_date) + '\x00' + str(archived_url), effective_date)
 
 		# get date from username:password, if available
 		if auth:
@@ -208,7 +208,11 @@ class Handler(socketserver.BaseRequestHandler):
 				conn = e
 			else:
 				return self.error_page(http_version, e.code, e.reason)
-
+		except socket.timeout as e:
+			_print('Timeout')
+		except:
+			_print('Generic exception')
+		
 		# get content type
 		content_type = conn.info().get('Content-Type')
 		if content_type == None:
@@ -244,7 +248,7 @@ class Handler(socketserver.BaseRequestHandler):
 				match = re.search('''//web\\.archive\\.org/web/([0-9]+)''', conn.geturl())
 				if match:
 					requested_date = match.group(1)
-					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(DATE_TOLERANCE):
+					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(int(DATE_TOLERANCE)):
 						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
 						conn.close()
 						return self.error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
@@ -294,7 +298,7 @@ class Handler(socketserver.BaseRequestHandler):
 						except:
 							redirect_code = 302
 						archived_url = match.group(2).decode('ascii', 'ignore')
-						self.shared_state.date_cache[effective_date + '\x00' + archived_url] = match.group(1).decode('ascii', 'ignore')
+						self.shared_state.date_cache[str(effective_date) + '\x00' + str(archived_url)] = match.group(1).decode('ascii', 'ignore')
 						print('[r]', archived_url)
 						return self.redirect_page(http_version, archived_url, redirect_code)
 
@@ -329,7 +333,7 @@ class Handler(socketserver.BaseRequestHandler):
 					# LRU cache with their respective date.
 					def add_to_date_cache(match):
 						orig_url = match.group(2)
-						self.shared_state.date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
+						self.shared_state.date_cache[str(effective_date) + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
 						return orig_url
 					data = re.sub(b'''(?:(?:https?:)?//web.archive.org)?/web/([^/]+)/([^"\\'#<>]+)''', add_to_date_cache, data)
 			elif mode == 1: # oocities
@@ -446,7 +450,7 @@ class Handler(socketserver.BaseRequestHandler):
 	def handle_settings(self, query):
 		"""Generate the settings page."""
 	
-		global DATE, DATE_TOLERANCE, GEOCITIES_FIX, QUICK_IMAGES, CONTENT_TYPE_ENCODING
+		global DATE, DATE_TOLERANCE, GEOCITIES_FIX, QUICK_IMAGES, WAYBACK_API, CONTENT_TYPE_ENCODING, SILENT, SETTINGS_PAGE
 		
 		if query != '': # handle any parameters that may have been sent
 			parsed = urllib.parse.parse_qs(query)
@@ -467,9 +471,9 @@ class Handler(socketserver.BaseRequestHandler):
 		settingspage += self.signature()
 		settingspage += '</b></p><form method="get" action="/">'
 		settingspage += '<p>Date to get pages from: <input type="text" name="date" size="8" value="'
-		settingspage += DATE
+		settingspage += str(DATE)
 		settingspage += '"><p>Date tolerance: <input type="text" name="dateTolerance" size="8" value="'
-		settingspage += DATE_TOLERANCE
+		settingspage += str(DATE_TOLERANCE)
 		settingspage += '"> days<br><input type="checkbox" name="gcFix"'
 		if GEOCITIES_FIX:
 			settingspage += ' checked'
@@ -490,60 +494,10 @@ class Handler(socketserver.BaseRequestHandler):
 	def wayback_to_datetime(self, date):
 		"""Convert a Wayback format date string to a datetime.datetime object."""
 
-		# parse the string
-		year = 1995
-		month = 12
-		day = 31
-		hour = 0
-		minute = 0
-		second = 0
-		if len(date) > 0:
-			year = int(date[:4])
-		if len(date) > 4:
-			month = int(date[4:6])
-		if len(date) > 6:
-			day = int(date[6:8])
-		if len(date) > 8:
-			hour = int(date[8:10])
-		if len(date) > 10:
-			minute = int(date[10:12])
-		if len(date) > 12:
-			second = int(date[12:14])
-
-		# sanitize the numbers
-		if month < 1:
-			month = 1
-		elif month > 12:
-			month = 12
-		if day < 1:
-			day = 1
-		elif day > 31:
-			day = 31
-		if hour > 23:
-			hour = 23
-		elif hour < 0:
-			hour = 0
-		if minute > 59:
-			minute = 59
-		elif minute < 0:
-			minute = 0
-		if second > 59:
-			second = 59
-		elif second < 0:
-			second = 0
-
-		# if the day is invalid for that month, work its way down
 		try:
-			dt = datetime.datetime(year, month, day, hour, minute, second) # max 31
+			dt = datetime.datetime.strptime(str(date), '%Y%m%d%H%M%S')
 		except:
-			try:
-				dt = datetime.datetime(year, month, day - 1, hour, minute, second) # max 30
-			except:
-				try:
-					dt = datetime.datetime(year, month, day - 2, hour, minute, second) # max 29
-				except:
-					dt = datetime.datetime(year, month, day - 3, hour, minute, second) # max 28
-
+			dt = datetime.datetime.strptime(str(date), '%Y%m%d')
 		return dt
 
 print_lock = threading.Lock()
