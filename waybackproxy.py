@@ -2,49 +2,52 @@
 import base64, datetime, json, lrudict, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
 from config import *
 
-# internal LRU dictionary for preserving URLs on redirect
-date_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
-
-# internal LRU dictionary for date availability
-availability_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024) if WAYBACK_API else None
-
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
 	pass
 
 class Handler(socketserver.BaseRequestHandler):
 	"""Main request handler."""
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+
+		# internal LRU dictionary for preserving URLs on redirect
+		self.date_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
+
+		# internal LRU dictionary for date availability
+		self.availability_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024) if WAYBACK_API else None
+
 	def handle(self):
 		"""Handle a request."""
-		global availability_cache
-		
+
 		# readline is pretty convenient
 		f = self.request.makefile()
 		
 		# read request line
 		reqline = line = f.readline()
-		split = line.rstrip('\r\n').split(' ')
+		split = line.rstrip().split()
 		http_version = len(split) > 2 and split[2] or 'HTTP/0.9'
-		
+
 		if split[0] != 'GET':
 			# only GET is implemented
 			return self.error_page(http_version, 501, 'Not Implemented')
-		
+
 		# read out the headers
 		request_host = None
 		pac_host = '" + location.host + ":' + str(LISTEN_PORT) # may not actually work
 		effective_date = DATE
 		auth = None
-		while line.rstrip('\r\n') != '':
+		while line.strip() != '':
 			line = f.readline()
 			ll = line.lower()
 			if ll[:6] == 'host: ':
-				pac_host = request_host = line[6:].rstrip('\r\n')
+				pac_host = request_host = line[6:].rstrip()
 				if ':' not in pac_host: # explicitly specify port if running on port 80
 					pac_host += ':80'
 			elif ll[:21] == 'x-waybackproxy-date: ':
 				# API for a personal project of mine
-				effective_date = line[21:].rstrip('\r\n')
+				effective_date = line[21:].rstrip()
 			elif ll[:21] == 'authorization: basic ':
 				# asset date code passed as username:password
 				auth = base64.b64decode(ll[21:])
@@ -62,19 +65,21 @@ class Handler(socketserver.BaseRequestHandler):
 			archived_url = split[1]
 		request_url = archived_url
 		parsed = urllib.parse.urlparse(request_url)
-		
+
 		# make a path
 		path = parsed.path
-		if parsed.query != '': path += '?' + parsed.query
-		if path == '': path == '/'
-		
+		if parsed.query:
+			path += '?' + parsed.query
+		elif path == '':
+			path == '/'
+
 		# get the hostname for later
 		host = parsed.netloc.split(':')
 		hostname = host[0]
 
 		# get cached date for redirects, if available
 		original_date = effective_date
-		effective_date = date_cache.get(effective_date + '\x00' + archived_url, effective_date)
+		effective_date = self.date_cache.get(effective_date + '\x00' + archived_url, effective_date)
 
 		# get date from username:password, if available
 		if auth:
@@ -84,19 +89,19 @@ class Handler(socketserver.BaseRequestHandler):
 		try:
 			if path in pac_file_paths:
 				# PAC file to bypass QUICK_IMAGES requests if WAYBACK_API is not enabled
-				pac  = http_version.encode('ascii', 'ignore') + b''' 200 OK\r\n'''
-				pac += b'''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
-				pac += b'''\r\n'''
-				pac += b'''function FindProxyForURL(url, host)\r\n'''
-				pac += b'''{\r\n'''
-				if not availability_cache:
-					pac += b'''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
-					pac += b'''	{\r\n'''
-					pac += b'''		return "DIRECT";\r\n'''
-					pac += b'''	}\r\n'''
-				pac += b'''	return "PROXY ''' + pac_host.encode('ascii', 'ignore') + b'''";\r\n'''
-				pac += b'''}\r\n'''
-				self.request.sendall(pac)
+				pac  = http_version + ''' 200 OK\r\n'''
+				pac += '''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
+				pac += '''\r\n'''
+				pac += '''function FindProxyForURL(url, host)\r\n'''
+				pac += '''{\r\n'''
+				if not self.availability_cache:
+					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
+					pac += '''	{\r\n'''
+					pac += '''		return "DIRECT";\r\n'''
+					pac += '''	}\r\n'''
+				pac += '''	return "PROXY ''' + pac_host + '''";\r\n'''
+				pac += '''}\r\n'''
+				self.request.sendall(pac.encode('ascii', 'ignore'))
 				return
 			elif hostname == 'web.archive.org':
 				if path[:5] != '/web/':
@@ -123,7 +128,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)				
 
-			if availability_cache is not None:
+			if self.availability_cache is not None:
 				# are we requesting from Wayback?
 				split = request_url.split('/')
 
@@ -138,7 +143,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 					# check availability LRU cache
 					availability_url = '/'.join(split[5:])
-					new_url = availability_cache.get(availability_url, None)
+					new_url = self.availability_cache.get(availability_url, None)
 					if new_url:
 						# in cache => replace URL immediately
 						request_url = new_url
@@ -169,21 +174,18 @@ class Handler(socketserver.BaseRequestHandler):
 		except urllib.error.HTTPError as e:
 			# an error has been found
 
-			if e.code in (403, 404, 412):
-				# 403, 404 or tolerance exceeded => heuristically determine the static URL for some redirect scripts
+			if e.code in (403, 404, 412): # not found or tolerance exceeded
+				# heuristically determine the static URL for some redirect scripts
 				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\\.(?:[^/%]+))(?:%2F|/).+)''', archived_url, re.I)
 				if not match:
 					match = re.search('''(?:\\?|&)(?:[^=]+)=((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\\.(?:[^/%]+))?(?:%2F|/)[^&]+)''', archived_url, re.I)
-				if match:
-					# we found it
+				if match: # found it
 					new_url = urllib.parse.unquote_plus(match.group(1))
-					# add protocol if the URL is absolute but missing a protocol
-					if new_url[0] != '/' and '://' not in new_url:
+					if new_url[0] != '/' and '://' not in new_url: # add protocol if the URL is absolute but missing a protocol
 						new_url = 'http://' + new_url
 					_print('[r]', new_url)
 					return self.redirect_page(http_version, new_url)
-			elif e.code in (301, 302):
-				# 301 or 302 => urllib-generated error about an infinite redirect loop
+			elif e.code in (301, 302): # urllib-generated error about an infinite redirect loop
 				_print('[!] Infinite redirect loop')
 				return self.error_page(http_version, 508, 'Infinite Redirect Loop')
 
@@ -196,16 +198,22 @@ class Handler(socketserver.BaseRequestHandler):
 				conn = e
 			else:
 				return self.error_page(http_version, e.code, e.reason)
-		
+
 		# get content type
 		content_type = conn.info().get('Content-Type')
-		if content_type == None: content_type = 'text/html'
-		if not CONTENT_TYPE_ENCODING and content_type.find(';') > -1: content_type = content_type[:content_type.find(';')]
-		
+		if content_type == None:
+			content_type = 'text/html'
+		elif not CONTENT_TYPE_ENCODING:
+			idx = content_type.find(';')
+			if idx > -1:
+				content_type = content_type[:idx]
+
 		# set the mode: [0]wayback [1]oocities
-		mode = 0
-		if GEOCITIES_FIX and hostname in ['www.oocities.org', 'www.oocities.com']: mode = 1
-		
+		if GEOCITIES_FIX and hostname in ('www.oocities.org', 'www.oocities.com'):
+			mode = 1
+		else:
+			mode = 0
+
 		# Wayback will add its HTML to anything it thinks is HTML
 		guessed_content_type = conn.info().get('X-Archive-Guessed-Content-Type')
 		if not guessed_content_type:
@@ -262,7 +270,8 @@ class Handler(socketserver.BaseRequestHandler):
 								return self.error_page(http_version, e.code, e.reason)
 
 						content_type = conn.info().get('Content-Type')
-						if not CONTENT_TYPE_ENCODING and content_type.find(';') > -1: content_type = content_type[:content_type.find(';')]
+						if not CONTENT_TYPE_ENCODING and content_type.find(';') > -1:
+							content_type = content_type[:content_type.find(';')]
 						data = conn.read()
 
 				if b'<title></title>' in data and b'<h1><span>Internet Archive\'s Wayback Machine</span></h1>' in data:
@@ -275,16 +284,16 @@ class Handler(socketserver.BaseRequestHandler):
 						except:
 							redirect_code = 302
 						archived_url = match.group(2).decode('ascii', 'ignore')
-						date_cache[effective_date + '\x00' + archived_url] = match.group(1).decode('ascii', 'ignore')
+						self.date_cache[effective_date + '\x00' + archived_url] = match.group(1).decode('ascii', 'ignore')
 						print('[r]', archived_url)
 						return self.redirect_page(http_version, archived_url, redirect_code)
 
 				# pre-toolbar scripts and CSS
-				data = re.sub(b'''<script src="//archive\\.org/(?:.*)<!-- End Wayback Rewrite JS Include -->(?:\r)?\n''', b'', data, flags=re.S)
+				data = re.sub(b'''<script src="//archive\\.org/.*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, flags=re.S)
 				# toolbar
-				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->(?:.*)<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, flags=re.S)
+				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->.*<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, flags=re.S)
 				# comments on footer
-				data = re.sub(b'''<!--(?:\r)?\n     FILE ARCHIVED (?:.*)$', b''', data, flags=re.S)
+				data = re.sub(b'''<!--\\r?\\n     FILE ARCHIVED .*$', b''', data, flags=re.S)
 				# fix base tag
 				data = re.sub(b'''(<base (?:[^>]*)href=(?:["\'])?)(?:(?:https?:)?//web.archive.org)?/web/(?:[^/]+)/''', b'\\1', data, flags=re.I + re.S)
 
@@ -304,24 +313,24 @@ class Handler(socketserver.BaseRequestHandler):
 					# sees an iframe pointing to an invalid URL.
 					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)/([^:]+)://',
 						QUICK_IMAGES == 2 and b'\\3://\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3://', data)
-					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)/', b'', data)
+					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)/', b'', data) # non-asset
 				else:
 					# Remove asset URLs while simultaneously adding them to the
 					# LRU cache with their respective date.
 					def add_to_date_cache(match):
 						orig_url = match.group(2)
-						date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
+						self.date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
 						return orig_url
-					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([^/]+)/([^"\'#<>]+)', add_to_date_cache, data)
+					data = re.sub(b'''(?:(?:https?:)?//web.archive.org)?/web/([^/]+)/([^"\\'#<>]+)''', add_to_date_cache, data)
 			elif mode == 1: # oocities
 				# viewport/cache-control/max-width code (header)
-				data = re.sub(b'''^(?:.*?)\n\n''', b'', data, flags=re.S)
+				data = re.sub(b'''^.*?\n\n''', b'', data, flags=re.S)
 				# archive notice and tracking code (footer)
-				data = re.sub(b'''<style> \n.zoomout { -webkit-transition: (?:.*)$''', b'', data, flags=re.S)
+				data = re.sub(b'''<style> \n.zoomout { -webkit-transition: .*$''', b'', data, flags=re.S)
 				# clearly labeled snippets from Geocities
-				data = re.sub(b'''^(?:.*)<\\!-- text above generated by server\\. PLEASE REMOVE -->''', b'', data, flags=re.S)
-				data = re.sub(b'''<\\!-- following code added by server\\. PLEASE REMOVE -->(?:.*)<\!-- preceding code added by server\. PLEASE REMOVE -->''', b'', data, flags=re.S)
-				data = re.sub(b'''<\\!-- text below generated by server\\. PLEASE REMOVE -->(?:.*)$''', b'', data, flags=re.S)
+				data = re.sub(b'''^.*<\\!-- text above generated by server\\. PLEASE REMOVE -->''', b'', data, flags=re.S)
+				data = re.sub(b'''<\\!-- following code added by server\\. PLEASE REMOVE -->.*<\!-- preceding code added by server\. PLEASE REMOVE -->''', b'', data, flags=re.S)
+				data = re.sub(b'''<\\!-- text below generated by server\\. PLEASE REMOVE -->.*$''', b'', data, flags=re.S)
 
 				# fix links
 				data = re.sub(b'''//([^.]*)\\.oocities\\.com/''', b'//\\1.geocities.com/', data, flags=re.S)
@@ -434,8 +443,8 @@ class Handler(socketserver.BaseRequestHandler):
 			
 			if 'date' in parsed and DATE != parsed['date'][0]:
 				DATE = parsed['date'][0]
-				date_cache.clear()
-				availability_cache.clear()
+				self.date_cache.clear()
+				self.availability_cache.clear()
 			if 'dateTolerance' in parsed and DATE_TOLERANCE != parsed['dateTolerance'][0]:
 				DATE_TOLERANCE = parsed['dateTolerance'][0]
 			GEOCITIES_FIX = 'gcFix' in parsed
@@ -452,11 +461,14 @@ class Handler(socketserver.BaseRequestHandler):
 		settingspage += '"><p>Date tolerance: <input type="text" name="dateTolerance" size="8" value="'
 		settingspage += DATE_TOLERANCE
 		settingspage += '"> days<br><input type="checkbox" name="gcFix"'
-		if GEOCITIES_FIX: settingspage += ' checked'
+		if GEOCITIES_FIX:
+			settingspage += ' checked'
 		settingspage += '> Geocities Fix<br><input type="checkbox" name="quickImages"'
-		if QUICK_IMAGES: settingspage += ' checked'
+		if QUICK_IMAGES:
+			settingspage += ' checked'
 		settingspage += '> Quick images<br><input type="checkbox" name="ctEncoding"'
-		if CONTENT_TYPE_ENCODING: settingspage += ' checked'
+		if CONTENT_TYPE_ENCODING:
+			settingspage += ' checked'
 		settingspage += '> Encoding in Content-Type</p><p><input type="submit" value="Save"></p></form></body></html>'
 		self.request.send(settingspage.encode('utf8', 'ignore'))
 		self.request.close()
