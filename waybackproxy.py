@@ -6,17 +6,27 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
 	pass
 
+class SharedState:
+	"""Class for storing shared state across instances of Handler."""
+
+	def __init__(self):
+		# Create internal LRU dictionary for preserving URLs on redirect.
+		self.date_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
+
+		# Create internal LRU dictionary for date availability.
+		self.availability_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024) if WAYBACK_API else None
+
+shared_state = SharedState()
+
 class Handler(socketserver.BaseRequestHandler):
 	"""Main request handler."""
 
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
+	def setup(self, *args, **kwargs):
+		"""Set up this instance of Handler."""
+		super().setup(*args, **kwargs)
 
-		# internal LRU dictionary for preserving URLs on redirect
-		self.date_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
-
-		# internal LRU dictionary for date availability
-		self.availability_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024) if WAYBACK_API else None
+		# Store a local pointer to SharedState.
+		self.shared_state = shared_state
 
 	def handle(self):
 		"""Handle a request."""
@@ -79,7 +89,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 		# get cached date for redirects, if available
 		original_date = effective_date
-		effective_date = self.date_cache.get(effective_date + '\x00' + archived_url, effective_date)
+		effective_date = self.shared_state.date_cache.get(effective_date + '\x00' + archived_url, effective_date)
 
 		# get date from username:password, if available
 		if auth:
@@ -94,7 +104,7 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += '''\r\n'''
 				pac += '''function FindProxyForURL(url, host)\r\n'''
 				pac += '''{\r\n'''
-				if not self.availability_cache:
+				if not self.shared_state.availability_cache:
 					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
 					pac += '''	{\r\n'''
 					pac += '''		return "DIRECT";\r\n'''
@@ -128,7 +138,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)				
 
-			if self.availability_cache is not None:
+			if self.shared_state.availability_cache is not None:
 				# are we requesting from Wayback?
 				split = request_url.split('/')
 
@@ -143,7 +153,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 					# check availability LRU cache
 					availability_url = '/'.join(split[5:])
-					new_url = self.availability_cache.get(availability_url, None)
+					new_url = self.shared_state.availability_cache.get(availability_url, None)
 					if new_url:
 						# in cache => replace URL immediately
 						request_url = new_url
@@ -284,7 +294,7 @@ class Handler(socketserver.BaseRequestHandler):
 						except:
 							redirect_code = 302
 						archived_url = match.group(2).decode('ascii', 'ignore')
-						self.date_cache[effective_date + '\x00' + archived_url] = match.group(1).decode('ascii', 'ignore')
+						self.shared_state.date_cache[effective_date + '\x00' + archived_url] = match.group(1).decode('ascii', 'ignore')
 						print('[r]', archived_url)
 						return self.redirect_page(http_version, archived_url, redirect_code)
 
@@ -293,7 +303,7 @@ class Handler(socketserver.BaseRequestHandler):
 				# toolbar
 				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->.*<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, flags=re.S)
 				# comments on footer
-				data = re.sub(b'''<!--\\r?\\n     FILE ARCHIVED .*$', b''', data, flags=re.S)
+				data = re.sub(b'''<!--\\r?\\n     FILE ARCHIVED .*$''', b'', data, flags=re.S)
 				# fix base tag
 				data = re.sub(b'''(<base (?:[^>]*)href=(?:["\'])?)(?:(?:https?:)?//web.archive.org)?/web/(?:[^/]+)/''', b'\\1', data, flags=re.I + re.S)
 
@@ -319,7 +329,7 @@ class Handler(socketserver.BaseRequestHandler):
 					# LRU cache with their respective date.
 					def add_to_date_cache(match):
 						orig_url = match.group(2)
-						self.date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
+						self.shared_state.date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
 						return orig_url
 					data = re.sub(b'''(?:(?:https?:)?//web.archive.org)?/web/([^/]+)/([^"\\'#<>]+)''', add_to_date_cache, data)
 			elif mode == 1: # oocities
@@ -443,8 +453,8 @@ class Handler(socketserver.BaseRequestHandler):
 			
 			if 'date' in parsed and DATE != parsed['date'][0]:
 				DATE = parsed['date'][0]
-				self.date_cache.clear()
-				self.availability_cache.clear()
+				self.shared_state.date_cache.clear()
+				self.shared_state.availability_cache.clear()
 			if 'dateTolerance' in parsed and DATE_TOLERANCE != parsed['dateTolerance'][0]:
 				DATE_TOLERANCE = parsed['dateTolerance'][0]
 			GEOCITIES_FIX = 'gcFix' in parsed
@@ -539,7 +549,8 @@ class Handler(socketserver.BaseRequestHandler):
 print_lock = threading.Lock()
 def _print(*args, linebreak=True):
 	"""Logging function."""
-	if SILENT: return
+	if SILENT:
+		return
 	s = ' '.join([str(x) for x in args])
 	with print_lock:
 		sys.stdout.write(linebreak and (s + '\n') or s)
