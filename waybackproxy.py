@@ -436,7 +436,7 @@ class Handler(socketserver.BaseRequestHandler):
 	def handle_settings(self, query):
 		"""Generate the settings page."""
 	
-		global DATE, GEOCITIES_FIX, QUICK_IMAGES, CONTENT_TYPE_ENCODING
+		global DATE, DATE_TOLERANCE, GEOCITIES_FIX, QUICK_IMAGES, CONTENT_TYPE_ENCODING
 		
 		if query != '': # handle any parameters that may have been sent
 			parsed = urllib.parse.parse_qs(query)
