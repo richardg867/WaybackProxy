@@ -171,9 +171,9 @@ class Handler(socketserver.BaseRequestHandler):
 
 			if e.code in (403, 404, 412):
 				# 403, 404 or tolerance exceeded => heuristically determine the static URL for some redirect scripts
-				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))(?:%2F|/).+)''', archived_url, re.I)
+				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\\.(?:[^/%]+))(?:%2F|/).+)''', archived_url, re.I)
 				if not match:
-					match = re.search('''(?:\?|&)(?:[^=]+)=((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\.(?:[^/%]+))?(?:%2F|/)[^&]+)''', archived_url, re.I)
+					match = re.search('''(?:\\?|&)(?:[^=]+)=((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\\.(?:[^/%]+))?(?:%2F|/)[^&]+)''', archived_url, re.I)
 				if match:
 					# we found it
 					new_url = urllib.parse.unquote_plus(match.group(1))
@@ -223,7 +223,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 			# check if the date is within tolerance
 			if DATE_TOLERANCE is not None:
-				match = re.search('''//web\.archive\.org/web/([0-9]+)''', conn.geturl())
+				match = re.search('''//web\\.archive\\.org/web/([0-9]+)''', conn.geturl())
 				if match:
 					requested_date = match.group(1)
 					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(DATE_TOLERANCE):
@@ -237,14 +237,11 @@ class Handler(socketserver.BaseRequestHandler):
 			# patch the page
 			if mode == 0: # wayback
 				if b'<title>Wayback Machine</title>' in data:
-					if b'<p>This URL has been excluded from the Wayback Machine.</p>' in data:
-						# exclusion error (robots.txt?)
+					if b'<p>This URL has been excluded from the Wayback Machine.</p>' in data: # exclusion error (robots.txt?)
 						return self.error_page(http_version, 403, 'URL excluded')
 
-					match = re.search(b'<iframe id="playback" src="((?:(?:http(?:s)?:)?//web.archive.org)?/web/[^"]+)"', data)
-					if match:
-						# media playback iframe
-
+					match = re.search(b'''<iframe id="playback" src="((?:(?:https?:)?//web.archive.org)?/web/[^"]+)"''', data)
+					if match: # media playback iframe
 						# Some websites (especially ones that use frames)
 						# inexplicably render inside a media playback iframe.
 						# In that case, a simple redirect would result in a
@@ -269,7 +266,7 @@ class Handler(socketserver.BaseRequestHandler):
 						data = conn.read()
 
 				if b'<title></title>' in data and b'<h1><span>Internet Archive\'s Wayback Machine</span></h1>' in data:
-					match = re.search(b'<p class="impatient"><a href="(?:(?:http(?:s)?:)?//web\.archive\.org)?/web/([^/]+)/([^"]+)">Impatient\?</a></p>', data)
+					match = re.search(b'''<p class="impatient"><a href="(?:(?:https?:)?//web\\.archive\\.org)?/web/([^/]+)/([^"]+)">Impatient\\?</a></p>''', data)
 					if match:
 						# wayback redirect page, follow it
 						match2 = re.search(b'<p class="code shift red">Got an HTTP ([0-9]+)', data)
@@ -283,16 +280,16 @@ class Handler(socketserver.BaseRequestHandler):
 						return self.redirect_page(http_version, archived_url, redirect_code)
 
 				# pre-toolbar scripts and CSS
-				data = re.sub(b'<script src="//archive\.org/(?:.*)<!-- End Wayback Rewrite JS Include -->(?:\r)?\n', b'', data, flags=re.S)
+				data = re.sub(b'''<script src="//archive\\.org/(?:.*)<!-- End Wayback Rewrite JS Include -->(?:\r)?\n''', b'', data, flags=re.S)
 				# toolbar
-				data = re.sub(b'<!-- BEGIN WAYBACK TOOLBAR INSERT -->(?:.*)<!-- END WAYBACK TOOLBAR INSERT -->', b'', data, flags=re.S)
+				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->(?:.*)<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, flags=re.S)
 				# comments on footer
-				data = re.sub(b'<!--(?:\r)?\n     FILE ARCHIVED (?:.*)$', b'', data, flags=re.S)
+				data = re.sub(b'''<!--(?:\r)?\n     FILE ARCHIVED (?:.*)$', b''', data, flags=re.S)
 				# fix base tag
-				data = re.sub(b'(<base (?:[^>]*)href=(?:["\'])?)(?:(?:http(?:s)?:)?//web.archive.org)?/web/(?:[^/]+)/', b'\\1', data, flags=re.I + re.S)
+				data = re.sub(b'''(<base (?:[^>]*)href=(?:["\'])?)(?:(?:https?:)?//web.archive.org)?/web/(?:[^/]+)/''', b'\\1', data, flags=re.I + re.S)
 
 				# remove extraneous :80 from links
-				data = re.sub(b'((?:(?:http(?:s)?:)?//web.archive.org)?/web/)([^/]+)/([^:]+)://([^:]+):80/', b'\\1\\2/\\3://\\4/', data)
+				data = re.sub(b'((?:(?:https?:)?//web.archive.org)?/web/)([^/]+)/([^:]+)://([^:]+):80/', b'\\1\\2/\\3://\\4/', data)
 				# fix links
 				if QUICK_IMAGES:
 					# QUICK_IMAGES works by intercepting asset URLs (those
@@ -305,9 +302,9 @@ class Handler(socketserver.BaseRequestHandler):
 					# username:password, which taints less but is not supported
 					# by all browsers - IE notably kills the whole page if it
 					# sees an iframe pointing to an invalid URL.
-					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)/([^:]+)://',
+					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)/([^:]+)://',
 						QUICK_IMAGES == 2 and b'\\3://\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3://', data)
-					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([0-9]+)/', b'', data)
+					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)/', b'', data)
 				else:
 					# Remove asset URLs while simultaneously adding them to the
 					# LRU cache with their respective date.
@@ -315,19 +312,19 @@ class Handler(socketserver.BaseRequestHandler):
 						orig_url = match.group(2)
 						date_cache[effective_date + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
 						return orig_url
-					data = re.sub(b'(?:(?:http(?:s)?:)?//web.archive.org)?/web/([^/]+)/([^"\'#<>]+)', add_to_date_cache, data)
+					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([^/]+)/([^"\'#<>]+)', add_to_date_cache, data)
 			elif mode == 1: # oocities
 				# viewport/cache-control/max-width code (header)
-				data = re.sub(b'^(?:.*?)\n\n', b'', data, flags=re.S)
+				data = re.sub(b'''^(?:.*?)\n\n''', b'', data, flags=re.S)
 				# archive notice and tracking code (footer)
-				data = re.sub(b'<style> \n.zoomout { -webkit-transition: (?:.*)$', b'', data, flags=re.S)
+				data = re.sub(b'''<style> \n.zoomout { -webkit-transition: (?:.*)$''', b'', data, flags=re.S)
 				# clearly labeled snippets from Geocities
-				data = re.sub(b'^(?:.*)<\!-- text above generated by server\. PLEASE REMOVE -->', b'', data, flags=re.S)
-				data = re.sub(b'<\!-- following code added by server\. PLEASE REMOVE -->(?:.*)<\!-- preceding code added by server\. PLEASE REMOVE -->', b'', data, flags=re.S)
-				data = re.sub(b'<\!-- text below generated by server\. PLEASE REMOVE -->(?:.*)$', b'', data, flags=re.S)
+				data = re.sub(b'''^(?:.*)<\\!-- text above generated by server\\. PLEASE REMOVE -->''', b'', data, flags=re.S)
+				data = re.sub(b'''<\\!-- following code added by server\\. PLEASE REMOVE -->(?:.*)<\!-- preceding code added by server\. PLEASE REMOVE -->''', b'', data, flags=re.S)
+				data = re.sub(b'''<\\!-- text below generated by server\\. PLEASE REMOVE -->(?:.*)$''', b'', data, flags=re.S)
 
 				# fix links
-				data = re.sub(b'//([^.]*)\.oocities\.com/', b'//\\1.geocities.com/', data, flags=re.S)
+				data = re.sub(b'''//([^.]*)\\.oocities\\.com/''', b'//\\1.geocities.com/', data, flags=re.S)
 
 			self.send_response_headers(conn, http_version, content_type, request_url)
 			self.request.sendall(data)
@@ -532,10 +529,9 @@ def _print(*args, linebreak=True):
 	"""Logging function."""
 	if SILENT: return
 	s = ' '.join([str(x) for x in args])
-	print_lock.acquire()
-	sys.stdout.write(linebreak and (s + '\n') or s)
-	sys.stdout.flush()
-	print_lock.release()
+	with print_lock:
+		sys.stdout.write(linebreak and (s + '\n') or s)
+		sys.stdout.flush()
 
 def main():
 	"""Starts the server."""
