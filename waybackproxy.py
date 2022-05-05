@@ -125,17 +125,17 @@ class Handler(socketserver.BaseRequestHandler):
 					split = request_url.split('/')
 					effective_date = split[4]
 					archived_url = '/'.join(split[5:])
-					_print('[>] [QI] {0}'.format(archived_url))
+					_print('[>] [QI]', archived_url)
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
 				# apply GEOCITIES_FIX and pass it through
-				_print('[>] {0}'.format(archived_url))
+				_print('[>]', archived_url)
 
 				split = archived_url.split('/')
 				hostname = split[2] = 'www.oocities.org'
 				request_url = '/'.join(split)
 			else:
 				# get from Wayback
-				_print('[>] {0}'.format(archived_url))
+				_print('[>]', archived_url)
 
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)				
 
@@ -201,7 +201,7 @@ class Handler(socketserver.BaseRequestHandler):
 				return self.send_error_page(http_version, 508, 'Infinite Redirect Loop')
 
 			if e.code != 412: # tolerance exceeded has its own error message above
-				_print('[!] {0} {1}'.format(e.code, e.reason))
+				_print('[!]', e.code, e.reason)
 
 			# If the memento Link header is present, this is a website error
 			# instead of a Wayback error. Pass it along if that's the case.
@@ -271,7 +271,7 @@ class Handler(socketserver.BaseRequestHandler):
 						# redirect loop. Download the URL and render it instead.
 						request_url = match.group(1).decode('ascii', 'ignore')
 						archived_url = '/'.join(request_url.split('/')[5:])
-						print('[f]', archived_url)
+						_print('[f]', archived_url)
 						try:
 							conn = urllib.request.urlopen(request_url)
 						except urllib.error.HTTPError as e:
@@ -300,7 +300,7 @@ class Handler(socketserver.BaseRequestHandler):
 							redirect_code = 302
 						archived_url = match.group(2).decode('ascii', 'ignore')
 						self.shared_state.date_cache[str(effective_date) + '\x00' + str(archived_url)] = match.group(1).decode('ascii', 'ignore')
-						print('[r]', archived_url)
+						_print('[r]', archived_url)
 						return self.send_redirect_page(http_version, archived_url, redirect_code)
 
 				# pre-toolbar scripts and CSS
@@ -494,27 +494,23 @@ class Handler(socketserver.BaseRequestHandler):
 
 	def wayback_to_datetime(self, date):
 		"""Convert a Wayback format date string to a datetime.datetime object."""
-
 		try:
-			dt = datetime.datetime.strptime(str(date), '%Y%m%d%H%M%S')
+			return datetime.datetime.strptime(str(date)[:14], '%Y%m%d%H%M%S')
 		except:
-			dt = datetime.datetime.strptime(str(date), '%Y%m%d')
-		return dt
+			return datetime.datetime.strptime(str(date)[:8], '%Y%m%d')
 
 print_lock = threading.Lock()
-def _print(*args, linebreak=True):
+def _print(*args, **kwargs):
 	"""Logging function."""
 	if SILENT:
 		return
-	s = ' '.join([str(x) for x in args])
 	with print_lock:
-		sys.stdout.write(linebreak and (s + '\n') or s)
-		sys.stdout.flush()
+		print(*args, **kwargs, flush=True)
 
 def main():
 	"""Starts the server."""
 	server = ThreadingTCPServer(('', LISTEN_PORT), Handler)
-	_print('[-] Now listening on port {0}'.format(LISTEN_PORT))
+	_print('[-] Now listening on port', LISTEN_PORT)
 	try:
 		server.serve_forever()
 	except KeyboardInterrupt: # Ctrl+C to stop
