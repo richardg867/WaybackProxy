@@ -41,7 +41,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 		if len(split) < 2 or split[0] != 'GET':
 			# only GET is implemented
-			return self.error_page(http_version, 501, 'Not Implemented')
+			return self.send_error_page(http_version, 501, 'Not Implemented')
 
 		# read out the headers
 		request_host = None
@@ -68,7 +68,7 @@ class Handler(socketserver.BaseRequestHandler):
 			# just a path (not corresponding to a PAC file) => transparent proxy
 			# Host header and therefore HTTP/1.1 are required
 			if not request_host:
-				return self.error_page(http_version, 400, 'Host header missing')
+				return self.send_error_page(http_version, 400, 'Host header missing')
 			archived_url = 'http://' + request_host + split[1]
 		else:
 			# full URL => explicit proxy
@@ -119,7 +119,7 @@ class Handler(socketserver.BaseRequestHandler):
 					if SETTINGS_PAGE:
 						return self.handle_settings(parsed.query)
 					else:
-						return self.error_page(http_version, 404, 'Not Found')
+						return self.send_error_page(http_version, 404, 'Not Found')
 				else:
 					# Pass requests through to web.archive.org. Required for QUICK_IMAGES.
 					archived_url = '/'.join(request_url.split('/')[5:])
@@ -193,10 +193,10 @@ class Handler(socketserver.BaseRequestHandler):
 					if new_url[0] != '/' and '://' not in new_url: # add protocol if the URL is absolute but missing a protocol
 						new_url = 'http://' + new_url
 					_print('[r]', new_url)
-					return self.redirect_page(http_version, new_url)
+					return self.send_redirect_page(http_version, new_url)
 			elif e.code in (301, 302): # urllib-generated error about an infinite redirect loop
 				_print('[!] Infinite redirect loop')
-				return self.error_page(http_version, 508, 'Infinite Redirect Loop')
+				return self.send_error_page(http_version, 508, 'Infinite Redirect Loop')
 
 			if e.code != 412: # tolerance exceeded has its own error message above
 				_print('[!] {0} {1}'.format(e.code, e.reason))
@@ -206,7 +206,7 @@ class Handler(socketserver.BaseRequestHandler):
 			if 'Link' in e.headers:
 				conn = e
 			else:
-				return self.error_page(http_version, e.code, e.reason)
+				return self.send_error_page(http_version, e.code, e.reason)
 		except socket.timeout as e:
 			_print('Timeout')
 		except:
@@ -240,7 +240,7 @@ class Handler(socketserver.BaseRequestHandler):
 				conn.close()
 				archived_url = '/'.join(request_url.split('/')[5:])
 				_print('[r] [QI]', archived_url)
-				return self.redirect_page(http_version, archived_url, 301)
+				return self.send_redirect_page(http_version, archived_url, 301)
 
 			# check if the date is within tolerance
 			if DATE_TOLERANCE is not None:
@@ -250,7 +250,7 @@ class Handler(socketserver.BaseRequestHandler):
 					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(int(DATE_TOLERANCE)):
 						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
 						conn.close()
-						return self.error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
+						return self.send_error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
 
 			# consume all data
 			data = conn.read()
@@ -259,7 +259,7 @@ class Handler(socketserver.BaseRequestHandler):
 			if mode == 0: # wayback
 				if b'<title>Wayback Machine</title>' in data:
 					if b'<p>This URL has been excluded from the Wayback Machine.</p>' in data: # exclusion error (robots.txt?)
-						return self.error_page(http_version, 403, 'URL excluded')
+						return self.send_error_page(http_version, 403, 'URL excluded')
 
 					match = re.search(b'''<iframe id="playback" src="((?:(?:https?:)?//web.archive.org)?/web/[^"]+)"''', data)
 					if match: # media playback iframe
@@ -280,7 +280,7 @@ class Handler(socketserver.BaseRequestHandler):
 							if 'Link' in e.headers:
 								conn = e
 							else:
-								return self.error_page(http_version, e.code, e.reason)
+								return self.send_error_page(http_version, e.code, e.reason)
 
 						content_type = conn.info().get('Content-Type')
 						if not CONTENT_TYPE_ENCODING and content_type.find(';') > -1:
@@ -299,7 +299,7 @@ class Handler(socketserver.BaseRequestHandler):
 						archived_url = match.group(2).decode('ascii', 'ignore')
 						self.shared_state.date_cache[str(effective_date) + '\x00' + str(archived_url)] = match.group(1).decode('ascii', 'ignore')
 						print('[r]', archived_url)
-						return self.redirect_page(http_version, archived_url, redirect_code)
+						return self.send_redirect_page(http_version, archived_url, redirect_code)
 
 				# pre-toolbar scripts and CSS
 				data = re.sub(b'''<script src="//archive\\.org/.*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, flags=re.S)
@@ -387,7 +387,7 @@ class Handler(socketserver.BaseRequestHandler):
 		response += '\r\n'
 		self.request.sendall(response.encode('ascii', 'ignore'))
 	
-	def error_page(self, http_version, code, reason):
+	def send_error_page(self, http_version, code, reason):
 		"""Generate an error page."""
 		
 		# make error page
@@ -432,7 +432,7 @@ class Handler(socketserver.BaseRequestHandler):
 		self.request.sendall('{0} {1} {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, reason, len(errorpage), errorpage).encode('utf8', 'ignore'))
 		self.request.close()
 
-	def redirect_page(self, http_version, target, code=302):
+	def send_redirect_page(self, http_version, target, code=302):
 		"""Generate a redirect page."""
 
 		# make redirect page
