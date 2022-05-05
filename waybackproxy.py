@@ -122,7 +122,9 @@ class Handler(socketserver.BaseRequestHandler):
 						return self.send_error_page(http_version, 404, 'Not Found')
 				else:
 					# Pass requests through to web.archive.org. Required for QUICK_IMAGES.
-					archived_url = '/'.join(request_url.split('/')[5:])
+					split = request_url.split('/')
+					effective_date = split[4]
+					archived_url = '/'.join(split[5:])
 					_print('[>] [QI] {0}'.format(archived_url))
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
 				# apply GEOCITIES_FIX and pass it through
@@ -274,7 +276,7 @@ class Handler(socketserver.BaseRequestHandler):
 							conn = urllib.request.urlopen(request_url)
 						except urllib.error.HTTPError as e:
 							_print('[!]', e.code, e.reason)
-							
+
 							# If the memento Link header is present, this is a website error
 							# instead of a Wayback error. Pass it along if that's the case.
 							if 'Link' in e.headers:
