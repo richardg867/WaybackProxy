@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import base64, datetime, json, lrudict, re, socket, socketserver, sys, threading, urllib.request, urllib.error, urllib.parse
+import base64, datetime, json, lrudict, re, socket, socketserver, sys, threading, traceback, urllib.request, urllib.error, urllib.parse
 from config import *
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -183,18 +183,23 @@ class Handler(socketserver.BaseRequestHandler):
 
 			conn = urllib.request.urlopen(request_url)
 		except urllib.error.HTTPError as e:
-			# an error has been found
+			# An HTTP error has been found.
 
 			if e.code in (403, 404, 412): # not found or tolerance exceeded
-				# heuristically determine the static URL for some redirect scripts
-				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\\.(?:[^/%]+))(?:%2F|/).+)''', archived_url, re.I)
+				# Heuristically determine the static URL for some redirect scripts.
+				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www[0-9]*)\\.[^/%]+)(?:%2F|/).+)''', archived_url, re.I) # URL in path
 				if not match:
-					match = re.search('''(?:\\?|&)(?:[^=]+)=((?:http(?:%3A|:)(?:%2F|/)|www(?:[0-9]+)?\\.(?:[^/%]+))?(?:%2F|/)[^&]+)''', archived_url, re.I)
-				if match: # found it
+					match = re.search('''[\\?&][^=]+=((?:http(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', archived_url, re.I) # URL in query string
+				if match: # found URL
+					# Decode the URL.
 					new_url = urllib.parse.unquote_plus(match.group(1))
-					if new_url[0] != '/' and '://' not in new_url: # add protocol if the URL is absolute but missing a protocol
+
+					# Add protocol if the URL is absolute but missing a protocol.
+					if new_url[0] != '/' and '://' not in new_url:
 						new_url = 'http://' + new_url
-					_print('[r]', new_url)
+
+					# Redirect client to the URL.
+					_print('[r] [g]', new_url)
 					return self.send_redirect_page(http_version, new_url)
 			elif e.code in (301, 302): # urllib-generated error about an infinite redirect loop
 				_print('[!] Infinite redirect loop')
@@ -210,10 +215,11 @@ class Handler(socketserver.BaseRequestHandler):
 			else:
 				return self.send_error_page(http_version, e.code, e.reason)
 		except socket.timeout as e:
-			_print('Timeout')
+			_print('[!] Timeout')
 		except:
-			_print('Generic exception')
-		
+			_print('[!] Generic exception:')
+			traceback.print_exc()
+
 		# get content type
 		content_type = conn.info().get('Content-Type')
 		if content_type == None:
@@ -383,31 +389,31 @@ class Handler(socketserver.BaseRequestHandler):
 
 		response = http_version
 
-		# pass the error code if there is one
+		# Pass the error code if there is one.
 		if isinstance(conn, urllib.error.HTTPError):
 			response += '{0} {1}'.format(conn.code, conn.reason.replace('\n', ' '))
 		else:
 			response += '200 OK'
 
-		# add content type, and the ETag for caching
+		# Add content type, and the ETag for caching.
 		response += '\r\nContent-Type: ' + content_type + '\r\nETag: "' + request_url.replace('"', '') + '"\r\n'
 
-		# add X-Archive-Orig-* headers
+		# Add X-Archive-Orig-* headers.
 		headers = conn.info()
 		for header in headers:
 			if header.find('X-Archive-Orig-') == 0:
 				orig_header = header[15:]
-				# blacklist certain headers which may alter the client
+				# Blacklist certain headers which may affect client behavior.
 				if orig_header.lower() not in ('connection', 'location', 'content-type', 'content-length', 'etag', 'authorization', 'set-cookie'):
 					response += orig_header + ': ' + headers[header] + '\r\n'
 
-		# finish and send the request
+		# Finish and send the request.
 		response += '\r\n'
 		self.request.sendall(response.encode('ascii', 'ignore'))
 	
 	def send_error_page(self, http_version, code, reason):
 		"""Generate an error page."""
-		
+
 		# make error page
 		errorpage  = '<html><head><title>{0} {1}</title>'.format(code, reason)
 		# IE's same-origin policy throws "Access is denied." inside frames
@@ -418,7 +424,7 @@ class Handler(socketserver.BaseRequestHandler):
 		errorpage += '<script language="javascript1.3">if (window.screenLeft != null) { eval(\'try { var frameElement = window.frameElement; } catch (e) { document.location.href = "about:blank"; }\'); }</script>'
 		errorpage += '<script language="javascript">if (window.self != window.top && !(window.frameElement && window.frameElement.tagName == "FRAME")) { document.location.href = "about:blank"; }</script>'
 		errorpage += '</head><body><h1>{0}</h1><p>'.format(reason)
-		
+
 		# add code information
 		if code in (404, 508): # page not archived or redirect loop
 			errorpage += 'This page may not be archived by the Wayback Machine.'
