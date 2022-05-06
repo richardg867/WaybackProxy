@@ -484,15 +484,16 @@ class Handler(socketserver.BaseRequestHandler):
 		if query != '': # handle any parameters that may have been sent
 			parsed = urllib.parse.parse_qs(query)
 
-			if 'date' in parsed and DATE != parsed['date'][0]:
-				DATE = parsed['date'][0]
-				self.shared_state.date_cache.clear()
-				self.shared_state.availability_cache.clear()
-			if 'dateTolerance' in parsed and DATE_TOLERANCE != parsed['dateTolerance'][0]:
-				DATE_TOLERANCE = parsed['dateTolerance'][0]
-			GEOCITIES_FIX = 'gcFix' in parsed
-			QUICK_IMAGES = 'quickImages' in parsed
-			CONTENT_TYPE_ENCODING = 'ctEncoding' in parsed
+			if 'date' in parsed and 'dateTolerance' in parsed:
+				if DATE != parsed['date'][0]:
+					DATE = parsed['date'][0]
+					self.shared_state.date_cache.clear()
+					self.shared_state.availability_cache.clear()
+				if DATE_TOLERANCE != parsed['dateTolerance'][0]:
+					DATE_TOLERANCE = parsed['dateTolerance'][0]
+				GEOCITIES_FIX = 'gcFix' in parsed
+				QUICK_IMAGES = 'quickImages' in parsed
+				CONTENT_TYPE_ENCODING = 'ctEncoding' in parsed
 		
 		# send the page and stop
 		settingspage  = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n'
