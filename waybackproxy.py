@@ -215,10 +215,12 @@ class Handler(socketserver.BaseRequestHandler):
 			else:
 				return self.send_error_page(http_version, e.code, e.reason)
 		except socket.timeout as e:
-			_print('[!] Timeout')
+			_print('[!] Fetch timeout')
+			return self.send_error_page(http_version, 504, 'Gateway Timeout')
 		except:
-			_print('[!] Generic exception:')
+			_print('[!] Fetch exception:')
 			traceback.print_exc()
+			return self.send_error_page(http_version, 502, 'Bad Gateway')
 
 		# get content type
 		content_type = conn.info().get('Content-Type')
@@ -432,6 +434,10 @@ class Handler(socketserver.BaseRequestHandler):
 			errorpage += 'This page was not archived due to a Wayback Machine exclusion.'
 		elif code == 501: # method not implemented
 			errorpage += 'WaybackProxy only implements the GET method.'
+		elif code == 502: # exception
+			errorpage += 'This page could not be fetched due to an unknown error.'
+		elif code == 504: # timeout
+			errorpage += 'This page could not be fetched due to a Wayback Machine server timeout.'
 		elif code == 412: # outside of tolerance
 			errorpage += 'The earliest snapshot for this page is outside of the configured tolerance interval.'
 		elif code == 400 and reason == 'Host header missing': # no host header in transparent mode
