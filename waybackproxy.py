@@ -95,10 +95,10 @@ class Handler(socketserver.BaseRequestHandler):
 		if auth:
 			effective_date = auth.replace(':', '')
 
-		# effectively handle the request
+		# Effectively handle the request.
 		try:
 			if path in pac_file_paths:
-				# PAC file to bypass QUICK_IMAGES requests if WAYBACK_API is not enabled
+				# PAC file to bypass QUICK_IMAGES requests if WAYBACK_API is not enabled.
 				pac  = http_version + ''' 200 OK\r\n'''
 				pac += '''Content-Type: application/x-ns-proxy-autoconfig\r\n'''
 				pac += '''\r\n'''
@@ -127,39 +127,40 @@ class Handler(socketserver.BaseRequestHandler):
 					archived_url = '/'.join(split[5:])
 					_print('[>] [QI]', archived_url)
 			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
-				# apply GEOCITIES_FIX and pass it through
+				# Apply GEOCITIES_FIX and pass it through.
 				_print('[>]', archived_url)
 
 				split = archived_url.split('/')
 				hostname = split[2] = 'www.oocities.org'
 				request_url = '/'.join(split)
 			else:
-				# get from Wayback
+				# Get from the Wayback Machine.
 				_print('[>]', archived_url)
 
 				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)				
 
+			# Check Wayback Machine Availability API where applicable, to avoid archived 404 pages and other site errors.
 			if self.shared_state.availability_cache != None:
-				# are we requesting from Wayback?
+				# Are we requesting from the Wayback Machine?
 				split = request_url.split('/')
 
-				# if so, get the closest available date from Wayback's API, to avoid archived 404 pages and other site errors
+				# If so, get the closest available date from the API.
 				if split[2] == 'web.archive.org':
-					# remove extraneous :80 from URL
+					# Remove extraneous :80 from URL.
 					if ':' in split[5]:
 						if split[7][-3:] == ':80':
 							split[7] = split[7][:-3]
 					elif split[5][-3:] == ':80':
 						split[5] = split[5][:-3]
 
-					# check availability LRU cache
+					# Check availability LRU cache.
 					availability_url = '/'.join(split[5:])
 					new_url = self.shared_state.availability_cache.get(availability_url, None)
 					if new_url:
-						# in cache => replace URL immediately
+						# In cache => replace URL immediately.
 						request_url = new_url
 					else:
-						# not in cache => contact API
+						# Not in cache => contact API.
 						try:
 							availability = json.loads(urllib.request.urlopen('https://archive.org/wayback/available?url=' + urllib.parse.quote_plus(availability_url) + '&timestamp=' + effective_date[:14], timeout=10).read())
 							closest = availability.get('archived_snapshots', {}).get('closest', {})
@@ -169,34 +170,30 @@ class Handler(socketserver.BaseRequestHandler):
 							new_date = None
 
 						if new_date and new_date != effective_date[:14]:
-							# returned date is different
+							# Returned date is different.
 							new_url = closest['url']
 
-							# add asset tag if one is present in the original URL
+							# Add asset tag if one is present in the original URL.
 							if len(effective_date) > 14:
 								split = new_url.split('/')
 								split[4] += effective_date[14:]
 								new_url = '/'.join(split)
 
-							# replace URL and add it to the availability cache
+							# Replace URL and add it to the availability cache.
 							request_url = self.shared_state.availability_cache[availability_url] = new_url
 
+			# Start fetching the URL.
 			conn = urllib.request.urlopen(request_url)
 		except urllib.error.HTTPError as e:
-			# An HTTP error has been found.
-
+			# An HTTP error has occurred.
 			if e.code in (403, 404, 412): # not found or tolerance exceeded
 				# Heuristically determine the static URL for some redirect scripts.
-				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', archived_url, re.I) # URL in path
+				match = re.search('''[^/]/((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', archived_url, re.I) # URL in path
 				if not match:
-					match = re.search('''[\\?&][^=]+=((?:http(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', archived_url, re.I) # URL in query string
+					match = re.search('''[\\?&][^=]+=((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', archived_url, re.I) # URL in query string
 				if match: # found URL
-					# Decode the URL.
-					new_url = urllib.parse.unquote_plus(match.group(1))
-
-					# Add protocol if the URL is absolute but missing a protocol.
-					if new_url[0] != '/' and '://' not in new_url:
-						new_url = 'http://' + new_url
+					# Decode and sanitize the URL.
+					new_url = self.sanitize_redirect(urllib.parse.unquote_plus(match.group(1)))
 
 					# Redirect client to the URL.
 					_print('[r] [g]', new_url)
@@ -215,14 +212,16 @@ class Handler(socketserver.BaseRequestHandler):
 			else:
 				return self.send_error_page(http_version, e.code, e.reason)
 		except socket.timeout as e:
+			# A timeout has occurred.
 			_print('[!] Fetch timeout')
 			return self.send_error_page(http_version, 504, 'Gateway Timeout')
 		except:
+			# Some other fetch exception has occurred.
 			_print('[!] Fetch exception:')
 			traceback.print_exc()
 			return self.send_error_page(http_version, 502, 'Bad Gateway')
 
-		# get content type
+		# Get content type.
 		content_type = conn.info().get('Content-Type')
 		if content_type == None:
 			content_type = 'text/html'
@@ -231,11 +230,11 @@ class Handler(socketserver.BaseRequestHandler):
 			if idx > -1:
 				content_type = content_type[:idx]
 
-		# set the mode: [0]wayback [1]oocities
+		# Set the archive mode.
 		if GEOCITIES_FIX and hostname in ('www.oocities.org', 'www.oocities.com'):
-			mode = 1
+			mode = 1 # oocities
 		else:
-			mode = 0
+			mode = 0 # Wayback Machine
 
 		# Check content type to determine if this is HTML we need to patch.
 		# Wayback will add its HTML to anything it thinks is HTML.
@@ -243,7 +242,7 @@ class Handler(socketserver.BaseRequestHandler):
 		if not guessed_content_type:
 			guessed_content_type = content_type
 		if 'text/html' in guessed_content_type:
-			# Some dynamically generated links may end up pointing to
+			# Some dynamically-generated links may end up pointing to
 			# web.archive.org. Correct that by redirecting the Wayback
 			# portion of the URL away if it ends up being HTML consumed
 			# through the QUICK_IMAGES interface.
@@ -267,19 +266,25 @@ class Handler(socketserver.BaseRequestHandler):
 			data = conn.read()
 
 			# Patch the page.
-			if mode == 0: # wayback
+			if mode == 0: # Wayback Machine
+				# Check if this is a Wayback Machine page.
 				if b'<title>Wayback Machine</title>' in data:
-					if b'<p>This URL has been excluded from the Wayback Machine.</p>' in data: # exclusion error (robots.txt?)
+					# Check if this is an exclusion (robots.txt?) error page.
+					if b'<p>This URL has been excluded from the Wayback Machine.</p>' in data:
 						return self.send_error_page(http_version, 403, 'URL excluded')
 
+					# Check if this is a media playback iframe page.
+					# Some websites (especially ones that use frames)
+					# inexplicably render inside a media playback iframe.
+					# In that case, a simple redirect would result in a
+					# redirect loop, so fetch and render the URL instead.
 					match = re.search(b'''<iframe id="playback" src="((?:(?:https?:)?//web.archive.org)?/web/[^"]+)"''', data)
-					if match: # media playback iframe
-						# Some websites (especially ones that use frames)
-						# inexplicably render inside a media playback iframe.
-						# In that case, a simple redirect would result in a
-						# redirect loop. Download the URL and render it instead.
+					if match:
+						# Extract the content URL.
 						request_url = match.group(1).decode('ascii', 'ignore')
 						archived_url = '/'.join(request_url.split('/')[5:])
+
+						# Start fetching the URL.
 						_print('[f]', archived_url)
 						try:
 							conn = urllib.request.urlopen(request_url)
@@ -304,25 +309,26 @@ class Handler(socketserver.BaseRequestHandler):
 							data = conn.read()
 						else:
 							# Pass non-HTML data through.
-							self.send_response_headers(conn, http_version, content_type, request_url)
-							while True:
-								data = conn.read(1024)
-								if not data: break
-								self.request.sendall(data)
-							self.request.close()
-							return
+							return self.send_passthrough(conn, http_version, content_type, request_url)
 
+				# Check if this is a Wayback Machine redirect page.
 				if b'<title></title>' in data and b'<span class="label style-scope media-button"><!---->Wayback Machine<!----></span>' in data:
 					match = re.search(b'''<p class="impatient"><a href="(?:(?:https?:)?//web\\.archive\\.org)?/web/([^/]+)/([^"]+)">Impatient\\?</a></p>''', data)
 					if match:
-						# This is a Wayback redirect page, follow the redirect.
-						match2 = re.search(b'<p class="code shift red">Got an HTTP ([0-9]+)', data)
+						# Sanitize the URL.
+						archived_url = self.sanitize_redirect(match.group(2).decode('ascii', 'ignore'))
+
+						# Add URL to the date LRU cache.
+						self.shared_state.date_cache[str(effective_date) + '\x00' + archived_url] = match.group(1).decode('ascii', 'ignore')
+
+						# Get the original HTTP redirect code.
+						match = re.search(b'''<p class="code shift red">Got an HTTP ([0-9]+)''', data)
 						try:
-							redirect_code = int(match2.group(1))
+							redirect_code = int(match.group(1))
 						except:
 							redirect_code = 302
-						archived_url = match.group(2).decode('ascii', 'ignore')
-						self.shared_state.date_cache[str(effective_date) + '\x00' + str(archived_url)] = match.group(1).decode('ascii', 'ignore')
+
+						# Redirect client to the URL.
 						_print('[r]', archived_url)
 						return self.send_redirect_page(http_version, archived_url, redirect_code)
 
@@ -333,10 +339,10 @@ class Handler(socketserver.BaseRequestHandler):
 				# Remove comments on footer.
 				data = re.sub(b'''<!--\\r?\\n     FILE ARCHIVED .*$''', b'', data, flags=re.S)
 				# Fix base tag.
-				data = re.sub(b'''(<base (?:[^>]*)href=(?:["\'])?)(?:(?:https?:)?//web.archive.org)?/web/(?:[^/]+)/''', b'\\1', data, flags=re.I + re.S)
+				data = re.sub(b'''(<base\\s+[^>]*href=["']?)(?:(?:https?:)?//web.archive.org)?/web/[^/]+/(?:[^:/]+://)?''', b'\\1http://', data, flags=re.I + re.S)
 
 				# Remove extraneous :80 from links.
-				data = re.sub(b'((?:(?:https?:)?//web.archive.org)?/web/)([^/]+)/([^:]+)://([^:]+):80/', b'\\1\\2/\\3://\\4/', data)
+				data = re.sub(b'((?:(?:https?:)?//web.archive.org)?/web/)([^/]+)/([^/:]+)://([^/:]+):80/', b'\\1\\2/\\3://\\4/', data)
 				# Fix links.
 				if QUICK_IMAGES:
 					# QUICK_IMAGES works by intercepting asset URLs (those
@@ -349,14 +355,19 @@ class Handler(socketserver.BaseRequestHandler):
 					# username:password, which taints less but is not supported
 					# by all browsers - IE notably kills the whole page if it
 					# sees an iframe pointing to an invalid URL.
-					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)/([^:]+)://',
-						QUICK_IMAGES == 2 and b'\\3://\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3://', data)
-					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)/', b'', data) # non-asset
+					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)/([^:/]+://)',
+						QUICK_IMAGES == 2 and b'\\3\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3', data)
+					def strip_https(match): # convert secure non-asset URLs to regular HTTP
+						first_component = match.group(1)
+						return first_component == b'https:' and b'http:' or first_component
+					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/[^/]+/([^/]+)', strip_https, data)
 				else:
-					# Remove asset URLs while simultaneously adding them to the
-					# LRU cache with their respective date.
+					# Remove asset URLs while simultaneously adding them to the date LRU cache
+					# with their respective date and converting secure URLs to regular HTTP.
 					def add_to_date_cache(match):
 						orig_url = match.group(2)
+						if orig_url[:8] == b'https://':
+							orig_url = b'http://' + orig_url[8:]
 						self.shared_state.date_cache[str(effective_date) + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
 						return orig_url
 					data = re.sub(b'''(?:(?:https?:)?//web.archive.org)?/web/([^/]+)/([^"\\'#<>]+)''', add_to_date_cache, data)
@@ -371,19 +382,24 @@ class Handler(socketserver.BaseRequestHandler):
 				data = re.sub(b'''<\\!-- text below generated by server\\. PLEASE REMOVE -->.*$''', b'', data, flags=re.S)
 
 				# Fix links.
-				data = re.sub(b'''//([^.]*)\\.oocities\\.com/''', b'//\\1.geocities.com/', data, flags=re.S)
+				data = re.sub(b'''//([^\\.]*\\.)?oocities\\.com/''', b'//\\1geocities.com/', data, flags=re.S)
 
 			# Send patched page.
 			self.send_response_headers(conn, http_version, content_type, request_url)
 			self.request.sendall(data)
+			self.request.close()
 		else:
 			# Pass non-HTML data through.
-			self.send_response_headers(conn, http_version, content_type, request_url)
-			while True:
-				data = conn.read(1024)
-				if not data: break
-				self.request.sendall(data)
-		
+			self.send_passthrough(conn, http_version, content_type, request_url)
+
+	def send_passthrough(self, conn, http_version, content_type, request_url):
+		"""Pass data through to the client unmodified (save for our headers)."""
+		self.send_response_headers(conn, http_version, content_type, request_url)
+		while True:
+			data = conn.read(1024)
+			if not data:
+				break
+			self.request.sendall(data)
 		self.request.close()
 
 	def send_response_headers(self, conn, http_version, content_type, request_url):
@@ -516,7 +532,19 @@ class Handler(socketserver.BaseRequestHandler):
 		settingspage += '> Encoding in Content-Type</p><p><input type="submit" value="Save"></p></form></body></html>'
 		self.request.send(settingspage.encode('utf8', 'ignore'))
 		self.request.close()
-	
+
+	def sanitize_redirect(self, url):
+		"""Sanitize an URL for client-side redirection."""
+		if url[0] != '/' and '://' not in url:
+			# Add protocol if the URL is absolute but missing a protocol.
+			return 'http://' + url
+		elif url[:8].lower() == 'https://':
+			# Convert secure URLs to regular HTTP.
+			return 'http://' + url[8:]
+		else:
+			# No changes required.
+			return url
+
 	def signature(self):
 		"""Return the server signature."""
 		return 'WaybackProxy on {0}'.format(socket.gethostname())
