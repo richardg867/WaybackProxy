@@ -187,7 +187,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 			if e.code in (403, 404, 412): # not found or tolerance exceeded
 				# Heuristically determine the static URL for some redirect scripts.
-				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www[0-9]*)\\.[^/%]+)(?:%2F|/).+)''', archived_url, re.I) # URL in path
+				match = re.search('''[^/]/((?:http(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', archived_url, re.I) # URL in path
 				if not match:
 					match = re.search('''[\\?&][^=]+=((?:http(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', archived_url, re.I) # URL in query string
 				if match: # found URL
