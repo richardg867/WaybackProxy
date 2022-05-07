@@ -188,9 +188,10 @@ class Handler(socketserver.BaseRequestHandler):
 			# An HTTP error has occurred.
 			if e.code in (403, 404, 412): # not found or tolerance exceeded
 				# Heuristically determine the static URL for some redirect scripts.
-				match = re.search('''[^/]/((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', archived_url, re.I) # URL in path
+				parsed = urllib.parse.urlparse(archived_url)
+				match = re.search('''(?:^|&)[^=]+=((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', parsed.query, re.I) # URL in query string
 				if not match:
-					match = re.search('''[\\?&][^=]+=((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', archived_url, re.I) # URL in query string
+					match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', parsed.path, re.I) # URL in path
 				if match: # found URL
 					# Decode and sanitize the URL.
 					new_url = self.sanitize_redirect(urllib.parse.unquote_plus(match.group(1)))
