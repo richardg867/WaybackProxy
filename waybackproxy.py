@@ -196,7 +196,7 @@ class Handler(socketserver.BaseRequestHandler):
 					full_path = parsed.path
 					if parsed.query:
 						full_path += '?' + parsed.query
-					match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', full_path, re.I) # URL in path or raw query
+					match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', full_path, re.I) # URL in path or full query
 				if match: # found URL
 					# Decode and sanitize the URL.
 					new_url = self.sanitize_redirect(urllib.parse.unquote_plus(match.group(1)))
@@ -391,7 +391,7 @@ class Handler(socketserver.BaseRequestHandler):
 				data = re.sub(b'''//([^\\.]*\\.)?oocities\\.com/''', b'//\\1geocities.com/', data, flags=re.S)
 
 			# Send patched page.
-			self.send_response_headers(conn, http_version, content_type, request_url)
+			self.send_response_headers(conn, http_version, content_type, request_url, content_length=len(data))
 			self.request.sendall(data)
 			self.request.close()
 		else:
@@ -400,7 +400,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 	def send_passthrough(self, conn, http_version, content_type, request_url):
 		"""Pass data through to the client unmodified (save for our headers)."""
-		self.send_response_headers(conn, http_version, content_type, request_url)
+		self.send_response_headers(conn, http_version, content_type, request_url, content_length=True)
 		while True:
 			data = conn.read(1024)
 			if not data:
@@ -408,7 +408,7 @@ class Handler(socketserver.BaseRequestHandler):
 			self.request.sendall(data)
 		self.request.close()
 
-	def send_response_headers(self, conn, http_version, content_type, request_url):
+	def send_response_headers(self, conn, http_version, content_type, request_url, content_length=False):
 		"""Generate and send the response headers."""
 
 		# Pass the HTTP version, and error code if there is one.
@@ -418,21 +418,26 @@ class Handler(socketserver.BaseRequestHandler):
 		else:
 			response += ' 200 OK'
 
-		# Add content type and the caching ETag.
-		response += '\r\nContent-Type: ' + content_type + '\r\nETag: "' + request_url.replace('"', '') + '"\r\n'
+		# Add Content-Type, Content-Length and the caching ETag.
+		response += '\r\nContent-Type: ' + content_type
+		if type(content_length) == int:
+			response += '\r\nContent-Length: ' + str(content_length)
+			content_length = False # don't pass the original length through
+		response += '\r\nETag: "' + request_url.replace('"', '') + '"'
 
-		# Add X-Archive-Orig-* headers.
-		headers = conn.info()
-		for header in headers:
+		# Pass X-Archive-Orig-* (and Content-Length if requested) headers through.
+		for header in conn.headers:
 			if header.find('X-Archive-Orig-') == 0:
 				orig_header = header[15:]
-				# Blacklist certain headers which may affect client behavior.
+				# Skip headers which may affect client behavior.
 				if orig_header.lower() not in ('connection', 'location', 'content-type', 'content-length', 'etag', 'authorization', 'set-cookie'):
-					response += orig_header + ': ' + headers[header] + '\r\n'
+					response += '\r\n' + orig_header + ': ' + conn.headers[header]
+			elif content_length and header.lower() == 'content-length':
+				response += '\r\n' + header + ': ' + conn.headers[header]
 
 		# Finish and send the request.
-		response += '\r\n'
-		self.request.sendall(response.encode('ascii', 'ignore'))
+		response += '\r\n\r\n'
+		self.request.sendall(response.encode('utf8', 'ignore'))
 	
 	def send_error_page(self, http_version, code, reason):
 		"""Generate an error page."""
