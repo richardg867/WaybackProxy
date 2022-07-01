@@ -191,9 +191,12 @@ class Handler(socketserver.BaseRequestHandler):
 			if e.code in (403, 404, 412): # not found or tolerance exceeded
 				# Heuristically determine the static URL for some redirect scripts.
 				parsed = urllib.parse.urlparse(archived_url)
-				match = re.search('''(?:^|&)[^=]+=((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', parsed.query, re.I) # URL in query string
+				match = re.search('''(?:^|&)[^=]+=((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', parsed.query, re.I) # URL in query parameters
 				if not match:
-					match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', parsed.path, re.I) # URL in path
+					full_path = parsed.path
+					if parsed.query:
+						full_path += '?' + parsed.query
+					match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', full_path, re.I) # URL in path or raw query
 				if match: # found URL
 					# Decode and sanitize the URL.
 					new_url = self.sanitize_redirect(urllib.parse.unquote_plus(match.group(1)))
@@ -256,7 +259,7 @@ class Handler(socketserver.BaseRequestHandler):
 				return self.send_redirect_page(http_version, archived_url, 301)
 
 			# Check if the date is within tolerance.
-			if DATE_TOLERANCE is not None:
+			if DATE_TOLERANCE != None:
 				match = re.search('''//web\\.archive\\.org/web/([0-9]+)''', conn.geturl())
 				if match:
 					requested_date = match.group(1)
