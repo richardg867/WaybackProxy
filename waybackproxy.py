@@ -137,7 +137,7 @@ class Handler(socketserver.BaseRequestHandler):
 				# Get from the Wayback Machine.
 				_print('[>]', archived_url)
 
-				request_url = 'http://web.archive.org/web/{0}/{1}'.format(effective_date, archived_url)				
+				request_url = 'http://web.archive.org/web/{0}if_/{1}'.format(effective_date, archived_url)
 
 			# Check Wayback Machine Availability API where applicable, to avoid archived 404 pages and other site errors.
 			if self.shared_state.availability_cache != None:
@@ -173,11 +173,13 @@ class Handler(socketserver.BaseRequestHandler):
 							# Returned date is different.
 							new_url = closest['url']
 
-							# Add asset tag if one is present in the original URL.
+							# Add asset tag to the date.
+							split = new_url.split('/')
 							if len(effective_date) > 14:
-								split = new_url.split('/')
 								split[4] += effective_date[14:]
-								new_url = '/'.join(split)
+							else:
+								split[4] += 'if_'
+							new_url = '/'.join(split)
 
 							# Replace URL and add it to the availability cache.
 							request_url = self.shared_state.availability_cache[availability_url] = new_url
@@ -335,7 +337,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 				# Remove pre-toolbar scripts and CSS.
 				data = re.sub(b'''<script src="//archive\\.org/.*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, flags=re.S)
-				# Remove toolbar.
+				# Remove toolbar. The if_ asset tag serves no toolbar, but we remove it just in case.
 				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->.*<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, flags=re.S)
 				# Remove comments on footer.
 				data = re.sub(b'''<!--\\r?\\n     FILE ARCHIVED .*$''', b'', data, flags=re.S)
