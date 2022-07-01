@@ -410,9 +410,9 @@ class Handler(socketserver.BaseRequestHandler):
 
 		# Pass the error code if there is one.
 		if isinstance(conn, urllib.error.HTTPError):
-			response += '{0} {1}'.format(conn.code, conn.reason.replace('\n', ' '))
+			response += ' {0} {1}'.format(conn.code, conn.reason.replace('\n', ' '))
 		else:
-			response += '200 OK'
+			response += ' 200 OK'
 
 		# Add content type, and the ETag for caching.
 		response += '\r\nContent-Type: ' + content_type + '\r\nETag: "' + request_url.replace('"', '') + '"\r\n'
