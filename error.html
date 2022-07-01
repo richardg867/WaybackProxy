@@ -1,0 +1,22 @@
+<html>
+	<head>
+		<title>${code} ${reason}</title>
+		<script language="javascript"><!--
+			// Make websites look better by blanking out error pages in iframes.
+			// frameElement can be null or throw an error (IE) due to cross-origin
+			// policy, so blank out anyway if frameElement is missing, even though
+			// we can't tell what kind of frame we're in (iframe or frameset).
+			var co;
+			if (window.screenLeft != null) // IE4 lacks try-catch
+				eval('try { var x = window.frameElement; } catch (e) { co = true; }');
+			if (co || ((window.self != window.top) && (!window.frameElement || (window.frameElement.tagName != "FRAME"))))
+				document.location.href = "about:blank";
+		--></script>
+	</head>
+	<body>
+		<h1>${reason}</h1>
+		<p>${description}</p>
+		<hr>
+		<i>${signature}</i>
+	</body>
+</html>

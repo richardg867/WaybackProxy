@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import base64, datetime, json, lrudict, re, socket, socketserver, sys, threading, traceback, urllib.request, urllib.error, urllib.parse
+import base64, datetime, json, lrudict, re, socket, socketserver, string, sys, threading, traceback, urllib.request, urllib.error, urllib.parse
 from config import *
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -406,15 +406,14 @@ class Handler(socketserver.BaseRequestHandler):
 	def send_response_headers(self, conn, http_version, content_type, request_url):
 		"""Generate and send the response headers."""
 
+		# Pass the HTTP version, and error code if there is one.
 		response = http_version
-
-		# Pass the error code if there is one.
 		if isinstance(conn, urllib.error.HTTPError):
 			response += ' {0} {1}'.format(conn.code, conn.reason.replace('\n', ' '))
 		else:
 			response += ' 200 OK'
 
-		# Add content type, and the ETag for caching.
+		# Add content type and the caching ETag.
 		response += '\r\nContent-Type: ' + content_type + '\r\nETag: "' + request_url.replace('"', '') + '"\r\n'
 
 		# Add X-Archive-Orig-* headers.
@@ -433,50 +432,47 @@ class Handler(socketserver.BaseRequestHandler):
 	def send_error_page(self, http_version, code, reason):
 		"""Generate an error page."""
 
-		# make error page
-		errorpage  = '<html><head><title>{0} {1}</title>'.format(code, reason)
-		# IE's same-origin policy throws "Access is denied." inside frames
-		# loaded from a different origin. Use that to our advantage, even
-		# though regular frames are also affected. IE also doesn't recognize
-		# language="javascript1.4", so use 1.3 while blocking IE4 by detecting
-		# the lack of screenLeft as IE4 is quite noisy with script errors.
-		errorpage += '<script language="javascript1.3">if (window.screenLeft != null) { eval(\'try { var frameElement = window.frameElement; } catch (e) { document.location.href = "about:blank"; }\'); }</script>'
-		errorpage += '<script language="javascript">if (window.self != window.top && !(window.frameElement && window.frameElement.tagName == "FRAME")) { document.location.href = "about:blank"; }</script>'
-		errorpage += '</head><body><h1>{0}</h1><p>'.format(reason)
-
-		# add code information
+		# Get a description for this error code.
 		if code in (404, 508): # page not archived or redirect loop
-			errorpage += 'This page may not be archived by the Wayback Machine.'
+			description = 'This page may not be archived by the Wayback Machine.'
 		elif code == 403: # not crawled due to exclusion
-			errorpage += 'This page was not archived due to a Wayback Machine exclusion.'
+			description = 'This page was not archived due to a Wayback Machine exclusion.'
 		elif code == 501: # method not implemented
-			errorpage += 'WaybackProxy only implements the GET method.'
+			description = 'WaybackProxy only implements the GET method.'
 		elif code == 502: # exception
-			errorpage += 'This page could not be fetched due to an unknown error.'
+			description = 'This page could not be fetched due to an unknown error.'
 		elif code == 504: # timeout
-			errorpage += 'This page could not be fetched due to a Wayback Machine server timeout.'
+			description = 'This page could not be fetched due to a Wayback Machine server timeout.'
 		elif code == 412: # outside of tolerance
-			errorpage += 'The earliest snapshot for this page is outside of the configured tolerance interval.'
+			description = 'The earliest snapshot for this page is outside of the configured tolerance interval.'
 		elif code == 400 and reason == 'Host header missing': # no host header in transparent mode
-			errorpage += 'WaybackProxy\'s transparent mode requires an HTTP/1.1 compliant client.'
+			description = 'WaybackProxy\'s transparent mode requires an HTTP/1.1 compliant client.'
 		else: # another error
-			errorpage += 'Unknown error. The Wayback Machine may be experiencing technical difficulties.'
+			description = 'Unknown error. The Wayback Machine may be experiencing technical difficulties.'
 		
-		errorpage += '</p><hr><i>'
-		errorpage += self.signature()
-		errorpage += '</i></body></html>'
+		# Read error page file.
+		try:
+			f = open('error.html', 'r', encoding='utf8', errors='ignore')
+			error_page = f.read()
+			f.close()
+		except:
+			# Just send the code and reason as a backup.
+			error_page = '${code} ${reason}'
 
-		# add padding for IE
-		if len(errorpage) <= 512:
-			padding = '\n<!-- This comment pads the HTML so Internet Explorer displays this error page instead of its own. '
-			remainder = 510 - len(errorpage) - len(padding)
-			if remainder > 0:
-				padding += ' ' * remainder
-			padding += '-->'
-			errorpage += padding
+		# Format error page template.
+		signature = self.signature()
+		error_page = string.Template(error_page).substitute(**locals())
+		error_page_len = len(error_page)
 
-		# send error page and stop
-		self.request.sendall('{0} {1} {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, reason, len(errorpage), errorpage).encode('utf8', 'ignore'))
+		# Send formatted error page and stop.
+		self.request.sendall(
+			'{http_version} {code} {reason}\r\n'
+			'Content-Type: text/html\r\n'
+			'Content-Length: {error_page_len}\r\n'
+			'\r\n'
+			'{error_page}'
+			.format(**locals()).encode('utf8', 'ignore')
+		)
 		self.request.close()
 
 	def send_redirect_page(self, http_version, target, code=302):
