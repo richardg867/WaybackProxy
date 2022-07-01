@@ -21,10 +21,10 @@ ENV SILENT=False
 ENV SETTINGS_PAGE=True
 
 ADD startup.sh /
+ADD error.html /
 ADD lrudict.py /
 ADD waybackproxy.py /
 
 EXPOSE 8080
 
 CMD [ "sh" , "/startup.sh" ]
-
