@@ -53,7 +53,7 @@ When deploying via Docker, the config.py script can be customized by specifying 
 To build:
 
 ```bash
-docker build --no-cache -t waybackproxy .
+docker build --no-cache -f Dockerfile -t waybackproxy .
 ```
 To run:
 
