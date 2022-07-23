@@ -6,7 +6,7 @@ WaybackProxy is a retro-friendly HTTP proxy which retrieves pages from the [Inte
 
 ## Setup
 
-1. Edit `config.py` to your liking
+1. Edit `config.json` to your liking
 2. Start `waybackproxy.py` (Python 3 is required)
 3. Set up your retro browser:
 	* If your browser supports proxy auto-configuration, set the auto-configuration URL to `http://ip:port/proxy.pac` where `ip` is the IP of the system running WaybackProxy and `port` is the proxy's port (8888 by default).
@@ -48,7 +48,22 @@ When deploying via Docker, the config.json can be customized by specifying envir
 | `SILENT` | True | Disables logging to STDOUT if set to True |
 | `SETTINGS_PAGE` | True | Enables the settings page on http://web.archive.org if set to True |
 
-### Example docker commands
+### How to run in Docker
+
+### Using Docker Registry
+
+To pull:
+
+```bash
+docker pull cttynul/waybackproxy:latest
+```
+To run:
+
+```bash
+docker run --rm -it -e DATE=20011225 -p 8888:8888 cttynul/waybackproxy
+```
+
+### Build locally
 
 To build:
 
