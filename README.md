@@ -50,7 +50,7 @@ When deploying via Docker, the config.json can be customized by specifying envir
 
 ### How to run in Docker
 
-### Using Docker Registry
+#### Using Docker Registry
 
 To pull:
 
@@ -63,7 +63,7 @@ To run:
 docker run --rm -it -e DATE=20011225 -p 8888:8888 cttynul/waybackproxy
 ```
 
-### Build locally
+#### Build locally
 
 To build:
 
