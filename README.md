@@ -13,7 +13,7 @@ WaybackProxy is a retro-friendly HTTP proxy which retrieves pages from the [Inte
 	* If proxy auto-configuration is not supported or fails to work, set the browser to use an HTTP proxy at that IP and port instead.
 	* Transparent proxying is also supported for advanced users, with no configuration to WaybackProxy itself required.
 		* The easiest way to set up a transparent WaybackProxy is to run it on port 80 ([this cannot be done on Linux without security implications](https://unix.stackexchange.com/questions/87348/capabilities-for-a-script-on-linux)\), set up a fake DNS server - such as `dnsmasq -A "/#/ip"` where `ip` is the IP of the system running WaybackProxy - to redirect all requests to the proxy, and point client machines at that DNS server.
-4. Try it out! You can edit most settings that are in `config.py` by browsing to http://web.archive.org while on the proxy, although you must edit `config.py` to make them permanent.
+4. Try it out! You can edit most settings that are in `config.json` by browsing to http://web.archive.org while on the proxy, although you must edit `config.json` to make them permanent.
 5. Press Ctrl+C to stop the proxy
 
 ## Known issues and limitations
@@ -34,7 +34,7 @@ A Dockerfile is included that allows you to run WaybackProxy from a docker conta
 
 ### Environment Variables
 
-When deploying via Docker, the config.py script can be customized by specifying environment variables when creating the docker container. The environment variables match the example config.py script in this repository. Below is a complete list:
+When deploying via Docker, the config.json can be customized by specifying environment variables when creating the docker container. The environment variables match the example config.json in this repository. Below is a complete list:
 
 | Parameter        | Default | Description                            |
 |------------------|---------|----------------------------------------|
