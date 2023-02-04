@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import base64, datetime, json, lrudict, re, socket, socketserver, string, sys, threading, traceback, urllib.request, urllib.error, urllib.parse
-from config import *
+from config_handler import *
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
@@ -575,6 +575,7 @@ def main():
 	"""Starts the server."""
 	server = ThreadingTCPServer(('', LISTEN_PORT), Handler)
 	_print('[-] Now listening on port', LISTEN_PORT)
+	_print('[-] Date set to', DATE)
 	try:
 		server.serve_forever()
 	except KeyboardInterrupt: # Ctrl+C to stop
