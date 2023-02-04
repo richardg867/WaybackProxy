@@ -188,22 +188,9 @@ class Handler(socketserver.BaseRequestHandler):
 			conn = urllib.request.urlopen(request_url)
 		except urllib.error.HTTPError as e:
 			# An HTTP error has occurred.
-			if e.code in (403, 404, 412): # not found or tolerance exceeded
-				# Heuristically determine the static URL for some redirect scripts.
-				parsed = urllib.parse.urlparse(archived_url)
-				match = re.search('''(?:^|&)[^=]+=((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', parsed.query, re.I) # URL in query parameters
-				if not match:
-					full_path = parsed.path
-					if parsed.query:
-						full_path += '?' + parsed.query
-					match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', full_path, re.I) # URL in path or full query
-				if match: # found URL
-					# Decode and sanitize the URL.
-					new_url = self.sanitize_redirect(urllib.parse.unquote_plus(match.group(1)))
-
-					# Redirect client to the URL.
-					_print('[r] [g]', new_url)
-					return self.send_redirect_page(http_version, new_url)
+			if e.code in (403, 404): # not found
+				if self.guess_and_send_redirect(http_version, archived_url):
+					return
 			elif e.code in (301, 302): # urllib-generated error about an infinite redirect loop
 				_print('[!] Infinite redirect loop')
 				return self.send_error_page(http_version, 508, 'Infinite Redirect Loop')
@@ -266,7 +253,9 @@ class Handler(socketserver.BaseRequestHandler):
 					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(int(DATE_TOLERANCE)):
 						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
 						conn.close()
-						return self.send_error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
+						if not self.guess_and_send_redirect(http_version, archived_url):
+							self.send_error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
+						return
 
 			# Consume all data.
 			data = conn.read()
@@ -498,6 +487,25 @@ class Handler(socketserver.BaseRequestHandler):
 		# send redirect page and stop
 		self.request.sendall('{0} {1} Found\r\nLocation: {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, target, len(redirectpage), redirectpage).encode('utf8', 'ignore'))
 		self.request.close()
+
+	def guess_and_send_redirect(self, http_version, guess_url):
+		# Heuristically determine the static URL for some redirect scripts.
+		parsed = urllib.parse.urlparse(guess_url)
+		match = re.search('''(?:^|&)[^=]+=((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)?(?:%2F|/)[^&]+)''', parsed.query, re.I) # URL in query parameters
+		if not match:
+			full_path = parsed.path
+			if parsed.query:
+				full_path += '?' + parsed.query
+			match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', full_path, re.I) # URL in path or full query
+		if match: # found URL
+			# Decode and sanitize the URL.
+			new_url = self.sanitize_redirect(urllib.parse.unquote_plus(match.group(1)))
+
+			# Redirect client to the URL.
+			_print('[r] [g]', new_url)
+			self.send_redirect_page(http_version, new_url)
+			return True
+		return False
 	
 	def handle_settings(self, query):
 		"""Generate the settings page."""
