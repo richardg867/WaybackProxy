@@ -339,9 +339,9 @@ class Handler(socketserver.BaseRequestHandler):
 						return self.send_redirect_page(http_version, archived_url, redirect_code)
 
 				# Remove pre-toolbar scripts and CSS.
-				data = re.sub(b'''<script src="//archive\\.org/.*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, flags=re.S)
+				data = re.sub(b'''<script (?:src="//archive\\.org/|type="text/javascript" src="/_static/js/).*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, count=1, flags=re.S)
 				# Remove toolbar. The if_ asset tag serves no toolbar, but we remove it just in case.
-				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->.*<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, flags=re.S)
+				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->.*<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, count=1, flags=re.S)
 				# Remove comments on footer.
 				data = re.sub(b'''<!--\\r?\\n     FILE ARCHIVED .*$''', b'', data, flags=re.S)
 				# Fix base tag.
