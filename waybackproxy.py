@@ -16,6 +16,13 @@ class SharedState:
 		# Create internal LRU dictionary for date availability.
 		self.availability_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024) if WAYBACK_API else None
 
+		# Read domain whitelist file.
+		try:
+			with open('whitelist.txt', 'r') as f:
+				self.whitelist = f.read().splitlines()
+		except:
+			self.whitelist = []
+
 shared_state = SharedState()
 
 class Handler(socketserver.BaseRequestHandler):
@@ -27,15 +34,6 @@ class Handler(socketserver.BaseRequestHandler):
 
 		# Store a local pointer to SharedState.
 		self.shared_state = shared_state
-
-		# Read domain whitelist file.
-		try:
-			whitelist_file = open("whitelist.txt","r")
-			whitelist_data = whitelist_file.read()
-			self.whitelist = whitelist_data.split("\n")
-			whitelist_file.close()
-		except:
-			self.whitelist = list()
 
 	def handle(self):
 		"""Handle a request."""
@@ -122,8 +120,8 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += '''}\r\n'''
 				self.request.sendall(pac.encode('ascii', 'ignore'))
 				return
-			elif hostname in self.whitelist:
-				_print('[>]', archived_url,'(proxy bypassed by whitelist.txt)')
+			elif hostname in self.shared_state.whitelist:
+				_print('[>] [byp]', archived_url)
 			elif hostname == 'web.archive.org':
 				if path[:5] != '/web/':
 					# Launch settings if enabled.
