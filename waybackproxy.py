@@ -28,6 +28,15 @@ class Handler(socketserver.BaseRequestHandler):
 		# Store a local pointer to SharedState.
 		self.shared_state = shared_state
 
+		# Read domain whitelist file.
+		try:
+			whitelist_file = open("whitelist.txt","r")
+			whitelist_data = whitelist_file.read()
+			self.whitelist = whitelist_data.split("\n")
+			whitelist_file.close()
+		except:
+			self.whitelist = list()
+
 	def handle(self):
 		"""Handle a request."""
 
@@ -113,6 +122,8 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += '''}\r\n'''
 				self.request.sendall(pac.encode('ascii', 'ignore'))
 				return
+			elif hostname in self.whitelist:
+				_print('[>]', archived_url,'(proxy bypassed by whitelist.txt)')
 			elif hostname == 'web.archive.org':
 				if path[:5] != '/web/':
 					# Launch settings if enabled.

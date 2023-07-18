@@ -15,6 +15,7 @@ WaybackProxy is a retro-friendly HTTP proxy which retrieves pages from the [Inte
 		* The easiest way to set up a transparent WaybackProxy is to run it on port 80 ([this cannot be done on Linux without security implications](https://unix.stackexchange.com/questions/87348/capabilities-for-a-script-on-linux)\), set up a fake DNS server - such as `dnsmasq -A "/#/ip"` where `ip` is the IP of the system running WaybackProxy - to redirect all requests to the proxy, and point client machines at that DNS server.
 4. Try it out! You can edit most settings that are in `config.json` by browsing to http://web.archive.org while on the proxy, although you must edit `config.json` to make them permanent.
 5. Press Ctrl+C to stop the proxy
+6. Exclude domains from being proxied by adding them to `whitelist.txt`
 
 ## Docker Container
 
