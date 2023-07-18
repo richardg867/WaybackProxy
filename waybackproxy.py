@@ -575,10 +575,15 @@ class Handler(socketserver.BaseRequestHandler):
 
 	def wayback_to_datetime(self, date):
 		"""Convert a Wayback format date string to a datetime.datetime object."""
-		try:
-			return datetime.datetime.strptime(str(date)[:14], '%Y%m%d%H%M%S')
-		except:
-			return datetime.datetime.strptime(str(date)[:8], '%Y%m%d')
+		date = str(date)
+		fmt = '%Y%m%d%H%M%S'
+		fmt_len = 14
+		while fmt:
+			try:
+				return datetime.datetime.strptime(date[:fmt_len], fmt)
+			except:
+				fmt = fmt[:-2]
+				fmt_len -= 2
 
 print_lock = threading.Lock()
 def _print(*args, **kwargs):
