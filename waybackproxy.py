@@ -460,9 +460,8 @@ class Handler(socketserver.BaseRequestHandler):
 		
 		# Read error page file.
 		try:
-			f = open('error.html', 'r', encoding='utf8', errors='ignore')
-			error_page = f.read()
-			f.close()
+			with open('error.html', 'r', encoding='utf8', errors='ignore') as f:
+				error_page = f.read()
 		except:
 			# Just send the code and reason as a backup.
 			error_page = '${code} ${reason}'
