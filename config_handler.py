@@ -1,4 +1,5 @@
 import json
+
 # Listen port for the HTTP proxy.
 global LISTEN_PORT
 
@@ -39,17 +40,14 @@ global SILENT
 # Enables the settings page on http://web.archive.org if set to True.
 global SETTINGS_PAGE
 
-try:
-	with open("config.json") as f:
-		data = json.loads(f.read())
-		LISTEN_PORT = data["LISTEN_PORT"]
-		DATE = data["DATE"]
-		DATE_TOLERANCE = data["DATE_TOLERANCE"]
-		GEOCITIES_FIX = data["GEOCITIES_FIX"]
-		QUICK_IMAGES = data["QUICK_IMAGES"]
-		WAYBACK_API = data["WAYBACK_API"]
-		CONTENT_TYPE_ENCODING = data["CONTENT_TYPE_ENCODING"]
-		SILENT = data["SILENT"]
-		SETTINGS_PAGE = data["SETTINGS_PAGE"]
-except EnvironmentError as e:
-	print("Wops! Error opening config.json")
+with open('config.json', 'r', encoding='utf8', errors='ignore') as f:
+	data = json.loads(f.read())
+	LISTEN_PORT = data['LISTEN_PORT']
+	DATE = data['DATE']
+	DATE_TOLERANCE = data['DATE_TOLERANCE']
+	GEOCITIES_FIX = data['GEOCITIES_FIX']
+	QUICK_IMAGES = data['QUICK_IMAGES']
+	WAYBACK_API = data['WAYBACK_API']
+	CONTENT_TYPE_ENCODING = data['CONTENT_TYPE_ENCODING']
+	SILENT = data['SILENT']
+	SETTINGS_PAGE = data['SETTINGS_PAGE']
