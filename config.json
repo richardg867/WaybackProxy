@@ -4,7 +4,7 @@
     "DATE_TOLERANCE": 365,
     "GEOCITIES_FIX": true,
     "QUICK_IMAGES": true,
-    "WAYBACK_API": true,
+    "WAYBACK_API": false,
     "CONTENT_TYPE_ENCODING": true,
     "SILENT": false,
     "SETTINGS_PAGE": true
