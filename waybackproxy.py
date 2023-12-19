@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-import base64, datetime, json, lrudict, re, socket, socketserver, string, sys, threading, traceback, urllib.request, urllib.error, urllib.parse
+import base64, datetime, json, lrudict, re, socket, socketserver, string, sys, threading, time, traceback, urllib.parse
+try:
+	import urllib3
+except ImportError:
+	print('WaybackProxy now requires urllib3 to be installed. Follow setup step 3 on the readme to fix this.')
+	sys.exit(1)
 from config_handler import *
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -10,6 +15,10 @@ class SharedState:
 	"""Class for storing shared state across instances of Handler."""
 
 	def __init__(self):
+		# Create urllib3 connection pool.
+		self.http = urllib3.PoolManager(maxsize=4, block=True)
+		urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 		# Create internal LRU dictionary for preserving URLs on redirect.
 		self.date_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
 
@@ -146,7 +155,7 @@ class Handler(socketserver.BaseRequestHandler):
 				# Get from the Wayback Machine.
 				_print('[>]', archived_url)
 
-				request_url = 'http://web.archive.org/web/{0}if_/{1}'.format(effective_date, archived_url)
+				request_url = 'https://web.archive.org/web/{0}if_/{1}'.format(effective_date, archived_url)
 
 			# Check Wayback Machine Availability API where applicable, to avoid archived 404 pages and other site errors.
 			if self.shared_state.availability_cache != None:
@@ -171,7 +180,8 @@ class Handler(socketserver.BaseRequestHandler):
 					else:
 						# Not in cache => contact API.
 						try:
-							availability = json.loads(urllib.request.urlopen('https://archive.org/wayback/available?url=' + urllib.parse.quote_plus(availability_url) + '&timestamp=' + effective_date[:14], timeout=10).read())
+							availability_endpoint = 'https://archive.org/wayback/available?url=' + urllib.parse.quote_plus(availability_url) + '&timestamp=' + effective_date[:14]
+							availability = json.loads(self.shared_state.http.request('GET', availability_endpoint, timeout=10, retries=1).data)
 							closest = availability.get('archived_snapshots', {}).get('closest', {})
 							new_date = closest.get('timestamp', None)
 						except:
@@ -194,28 +204,10 @@ class Handler(socketserver.BaseRequestHandler):
 							request_url = self.shared_state.availability_cache[availability_url] = new_url
 
 			# Start fetching the URL.
-			conn = urllib.request.urlopen(request_url)
-		except urllib.error.HTTPError as e:
-			# An HTTP error has occurred.
-			if e.code in (403, 404): # not found
-				if self.guess_and_send_redirect(http_version, archived_url):
-					return
-			elif e.code in (301, 302): # urllib-generated error about an infinite redirect loop
-				_print('[!] Infinite redirect loop')
-				return self.send_error_page(http_version, 508, 'Infinite Redirect Loop')
-
-			if e.code != 412: # tolerance exceeded has its own error message above
-				_print('[!]', e.code, e.reason)
-
-			# If the memento Link header is present, this is a website error
-			# instead of a Wayback error. Pass it along if that's the case.
-			if 'Link' in e.headers:
-				conn = e
-			else:
-				return self.send_error_page(http_version, e.code, e.reason)
-		except socket.timeout as e:
-			# A timeout has occurred.
-			_print('[!] Fetch timeout')
+			retry = urllib3.util.retry.Retry(total=10, connect=5, read=5, redirect=5, backoff_factor=0.5)
+			conn = self.shared_state.http.urlopen('GET', request_url, retries=retry, preload_content=False)
+		except urllib3.exceptions.MaxRetryError as e:
+			_print('[!] Fetch retries exceeded:', e.reason)
 			return self.send_error_page(http_version, 504, 'Gateway Timeout')
 		except:
 			# Some other fetch exception has occurred.
@@ -223,8 +215,28 @@ class Handler(socketserver.BaseRequestHandler):
 			traceback.print_exc()
 			return self.send_error_page(http_version, 502, 'Bad Gateway')
 
+		# Check for HTTP errors.
+		if conn.status != 200:
+			if conn.status in (403, 404): # not found
+				if self.guess_and_send_redirect(http_version, archived_url):
+					conn.release_conn()
+					return
+			elif conn.status in (301, 302): # urllib-generated error about an infinite redirect loop
+				conn.release_conn()
+				_print('[!] Infinite redirect loop')
+				return self.send_error_page(http_version, 508, 'Infinite Redirect Loop')
+
+			if conn.status != 412: # tolerance exceeded has its own error message above
+				_print('[!]', conn.status, conn.reason)
+
+			# If the memento Link header is present, this is a website error
+			# instead of a Wayback error. Pass it along if that's the case.
+			if 'Link' not in conn.headers:
+				conn.release_conn()
+				return self.send_error_page(http_version, conn.status, conn.reason)
+
 		# Get content type.
-		content_type = conn.info().get('Content-Type')
+		content_type = conn.headers.get('Content-Type')
 		if content_type == None:
 			content_type = 'text/html'
 		elif not CONTENT_TYPE_ENCODING:
@@ -240,7 +252,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 		# Check content type to determine if this is HTML we need to patch.
 		# Wayback will add its HTML to anything it thinks is HTML.
-		guessed_content_type = conn.info().get('X-Archive-Guessed-Content-Type')
+		guessed_content_type = conn.headers.get('X-Archive-Guessed-Content-Type')
 		if not guessed_content_type:
 			guessed_content_type = content_type
 		if 'text/html' in guessed_content_type:
@@ -249,25 +261,26 @@ class Handler(socketserver.BaseRequestHandler):
 			# portion of the URL away if it ends up being HTML consumed
 			# through the QUICK_IMAGES interface.
 			if hostname == 'web.archive.org':
-				conn.close()
+				conn.release_conn()
 				archived_url = '/'.join(request_url.split('/')[5:])
 				_print('[r] [QI]', archived_url)
 				return self.send_redirect_page(http_version, archived_url, 301)
 
 			# Check if the date is within tolerance.
 			if DATE_TOLERANCE != None:
-				match = re.search('''//web\\.archive\\.org/web/([0-9]+)''', conn.geturl())
+				match = re.search('''//web\\.archive\\.org/web/([0-9]+)''', conn.geturl() or '')
 				if match:
 					requested_date = match.group(1)
 					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(int(DATE_TOLERANCE)):
+						conn.release_conn()
 						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
-						conn.close()
 						if not self.guess_and_send_redirect(http_version, archived_url):
 							self.send_error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
 						return
 
 			# Consume all data.
 			data = conn.read()
+			conn.release_conn()
 
 			# Patch the page.
 			if mode == 0: # Wayback Machine
@@ -290,20 +303,19 @@ class Handler(socketserver.BaseRequestHandler):
 
 						# Start fetching the URL.
 						_print('[f]', archived_url)
-						try:
-							conn = urllib.request.urlopen(request_url)
-						except urllib.error.HTTPError as e:
-							_print('[!]', e.code, e.reason)
+						conn = self.shared_state.http.urlopen('GET', request_url, retries=retry, preload_content=False)
+						
+						if conn.status != 200:
+							_print('[!]', conn.status, conn.reason)
 
 							# If the memento Link header is present, this is a website error
 							# instead of a Wayback error. Pass it along if that's the case.
-							if 'Link' in e.headers:
-								conn = e
-							else:
-								return self.send_error_page(http_version, e.code, e.reason)
+							if 'Link' not in conn.headers:
+								conn.release_conn()
+								return self.send_error_page(http_version, conn.status, conn.reason)
 
 						# Identify content type so we don't modify non-HTML content.
-						content_type = conn.info().get('Content-Type')
+						content_type = conn.headers.get('Content-Type')
 						if not CONTENT_TYPE_ENCODING:
 							idx = content_type.find(';')
 							if idx > -1:
@@ -311,6 +323,7 @@ class Handler(socketserver.BaseRequestHandler):
 						if 'text/html' in content_type:
 							# Consume all data and proceed with patching the page.
 							data = conn.read()
+							conn.release_conn()
 						else:
 							# Pass non-HTML data through.
 							return self.send_passthrough(conn, http_version, content_type, request_url)
@@ -399,22 +412,16 @@ class Handler(socketserver.BaseRequestHandler):
 	def send_passthrough(self, conn, http_version, content_type, request_url):
 		"""Pass data through to the client unmodified (save for our headers)."""
 		self.send_response_headers(conn, http_version, content_type, request_url, content_length=True)
-		while True:
-			data = conn.read(1024)
-			if not data:
-				break
+		for data in conn.stream(1024):
 			self.request.sendall(data)
+		conn.release_conn()
 		self.request.close()
 
 	def send_response_headers(self, conn, http_version, content_type, request_url, content_length=False):
 		"""Generate and send the response headers."""
 
 		# Pass the HTTP version, and error code if there is one.
-		response = http_version
-		if isinstance(conn, urllib.error.HTTPError):
-			response += ' {0} {1}'.format(conn.code, conn.reason.replace('\n', ' '))
-		else:
-			response += ' 200 OK'
+		response = '{0} {1} {2}'.format(http_version, conn.status, conn.reason.replace('\n', ' '))
 
 		# Add Content-Type, Content-Length and the caching ETag.
 		response += '\r\nContent-Type: ' + content_type
@@ -422,6 +429,7 @@ class Handler(socketserver.BaseRequestHandler):
 			response += '\r\nContent-Length: ' + str(content_length)
 			content_length = False # don't pass the original length through
 		response += '\r\nETag: "' + request_url.replace('"', '') + '"'
+		response += '\r\nConnection: close' # helps with IE6 trying to use proxy keep alive and holding half-open connections
 
 		# Pass X-Archive-Orig-* (and Content-Length if requested) headers through.
 		for header in conn.headers:
@@ -457,7 +465,7 @@ class Handler(socketserver.BaseRequestHandler):
 			description = 'WaybackProxy\'s transparent mode requires an HTTP/1.1 compliant client.'
 		else: # another error
 			description = 'Unknown error. The Wayback Machine may be experiencing technical difficulties.'
-		
+
 		# Read error page file.
 		try:
 			with open('error.html', 'r', encoding='utf8', errors='ignore') as f:
