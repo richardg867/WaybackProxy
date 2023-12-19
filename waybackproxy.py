@@ -337,7 +337,7 @@ class Handler(socketserver.BaseRequestHandler):
 						return self.send_redirect_page(http_version, archived_url, redirect_code)
 
 				# Remove pre-toolbar scripts and CSS.
-				data = re.sub(b'''<script (?:src="//archive\\.org/|type="text/javascript" src="(?://web-static\\.archive\\.org)?/_static/js/).*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, count=1, flags=re.S)
+				data = re.sub(b'''<script (?:type="text/javascript" )?src="(?:https?:)?//(?:web-static\\.)?archive\\.org/_static/js/.*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, count=1, flags=re.S)
 				# Remove toolbar. The if_ asset tag serves no toolbar, but we remove it just in case.
 				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->.*<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, count=1, flags=re.S)
 				# Remove comments on footer.
@@ -533,7 +533,7 @@ class Handler(socketserver.BaseRequestHandler):
 				GEOCITIES_FIX = 'gcFix' in parsed
 				QUICK_IMAGES = 'quickImages' in parsed
 				CONTENT_TYPE_ENCODING = 'ctEncoding' in parsed
-		
+
 		# send the page and stop
 		settingspage  = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n'
 		settingspage += '<html><head><title>WaybackProxy Settings</title></head><body><p><b>'
