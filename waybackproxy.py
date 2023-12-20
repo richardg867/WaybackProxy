@@ -375,10 +375,13 @@ class Handler(socketserver.BaseRequestHandler):
 					def filter_asset(match):
 						if match.group(2) in (None, b'if_', b'fw_'): # non-asset URL
 							return match.group(3) == b'https://' and b'http://' or match.group(3) # convert secure non-asset URLs to regular HTTP
-						elif QUICK_IMAGES == 2:
-							return b'http://' + match.group(1) + b':' + match.group(2) + b'@'
+						asset_type = match.group(2)
+						if asset_type == b'js_': # stop JavaScript code injection
+							asset_type = b'im_'
+						if QUICK_IMAGES == 2:
+							return b'http://' + match.group(1) + b':' + asset_type + b'@'
 						else:
-							return b'http://web.archive.org/web/' + match.group(1) + match.group(2) + b'/' + match.group(3)
+							return b'http://web.archive.org/web/' + match.group(1) + asset_type + b'/' + match.group(3)
 					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)?/([^:/]+:(?://)?)', filter_asset, data)
 				else:
 					# Remove asset URLs while simultaneously adding them to the date LRU cache
@@ -387,7 +390,7 @@ class Handler(socketserver.BaseRequestHandler):
 						orig_url = match.group(2)
 						if orig_url[:8] == b'https://':
 							orig_url = b'http://' + orig_url[8:]
-						self.shared_state.date_cache[str(effective_date) + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore')
+						self.shared_state.date_cache[str(effective_date) + '\x00' + orig_url.decode('ascii', 'ignore')] = match.group(1).decode('ascii', 'ignore').replace('js_', 'im_')
 						return orig_url
 					data = re.sub(b'''(?:(?:https?:)?//web.archive.org)?/web/([^/]+)/([^"\\'#<>]+)''', add_to_date_cache, data)
 			elif mode == 1: # oocities
