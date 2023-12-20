@@ -204,7 +204,7 @@ class Handler(socketserver.BaseRequestHandler):
 							request_url = self.shared_state.availability_cache[availability_url] = new_url
 
 			# Start fetching the URL.
-			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=5, backoff_factor=0.5)
+			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=5, backoff_factor=1, raise_on_redirect=True)
 			conn = self.shared_state.http.urlopen('GET', request_url, retries=retry, preload_content=False)
 		except urllib3.exceptions.MaxRetryError as e:
 			_print('[!] Fetch retries exceeded:', e.reason)
@@ -221,7 +221,7 @@ class Handler(socketserver.BaseRequestHandler):
 				if self.guess_and_send_redirect(http_version, archived_url):
 					conn.release_conn()
 					return
-			elif conn.status in (301, 302): # urllib-generated error about an infinite redirect loop
+			elif conn.status in (301, 302): # urllib3-generated error about an infinite redirect loop
 				conn.release_conn()
 				_print('[!] Infinite redirect loop')
 				return self.send_error_page(http_version, 508, 'Infinite Redirect Loop')
@@ -372,12 +372,14 @@ class Handler(socketserver.BaseRequestHandler):
 					# username:password, which taints less but is not supported
 					# by all browsers - IE notably kills the whole page if it
 					# sees an iframe pointing to an invalid URL.
-					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)/([^:/]+://)',
-						QUICK_IMAGES == 2 and b'\\3\\1:\\2@' or b'http://web.archive.org/web/\\1\\2/\\3', data)
-					def strip_https(match): # convert secure non-asset URLs to regular HTTP
-						first_component = match.group(1)
-						return first_component == b'https:' and b'http:' or first_component
-					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/[^/]+/([^/]+)', strip_https, data)
+					def filter_asset(match):
+						if match.group(2) in (None, b'if_', b'fw_'): # non-asset URL
+							return match.group(3) == b'https://' and b'http://' or match.group(3) # convert secure non-asset URLs to regular HTTP
+						elif QUICK_IMAGES == 2:
+							return b'http://' + match.group(1) + b':' + match.group(2) + b'@'
+						else:
+							return b'http://web.archive.org/web/' + match.group(1) + match.group(2) + b'/' + match.group(3)
+					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)?/([^:/]+://)', filter_asset, data)
 				else:
 					# Remove asset URLs while simultaneously adding them to the date LRU cache
 					# with their respective date and converting secure URLs to regular HTTP.
