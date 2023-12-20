@@ -379,7 +379,7 @@ class Handler(socketserver.BaseRequestHandler):
 							return b'http://' + match.group(1) + b':' + match.group(2) + b'@'
 						else:
 							return b'http://web.archive.org/web/' + match.group(1) + match.group(2) + b'/' + match.group(3)
-					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)?/([^:/]+://)', filter_asset, data)
+					data = re.sub(b'(?:(?:https?:)?//web.archive.org)?/web/([0-9]+)([a-z]+_)?/([^:/]+:(?://)?)', filter_asset, data)
 				else:
 					# Remove asset URLs while simultaneously adding them to the date LRU cache
 					# with their respective date and converting secure URLs to regular HTTP.
