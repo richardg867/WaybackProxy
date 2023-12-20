@@ -204,7 +204,7 @@ class Handler(socketserver.BaseRequestHandler):
 							request_url = self.shared_state.availability_cache[availability_url] = new_url
 
 			# Start fetching the URL.
-			retry = urllib3.util.retry.Retry(total=10, connect=5, read=5, redirect=5, backoff_factor=0.5)
+			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=5, backoff_factor=0.5)
 			conn = self.shared_state.http.urlopen('GET', request_url, retries=retry, preload_content=False)
 		except urllib3.exceptions.MaxRetryError as e:
 			_print('[!] Fetch retries exceeded:', e.reason)
@@ -512,7 +512,7 @@ class Handler(socketserver.BaseRequestHandler):
 			full_path = parsed.path
 			if parsed.query:
 				full_path += '?' + parsed.query
-			match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:%2F|/).+)''', full_path, re.I) # URL in path or full query
+			match = re.search('''((?:https?(?:%3A|:)(?:%2F|/)|www[0-9]*\\.[^/%]+)(?:(?:%2F|/).+|$))''', full_path, re.I) # URL in path or full query
 		if match: # found URL
 			# Decode and sanitize the URL.
 			new_url = self.sanitize_redirect(urllib.parse.unquote_plus(match.group(1)))
