@@ -204,7 +204,7 @@ class Handler(socketserver.BaseRequestHandler):
 							request_url = self.shared_state.availability_cache[availability_url] = new_url
 
 			# Start fetching the URL.
-			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=5, backoff_factor=1, raise_on_redirect=True)
+			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=5, backoff_factor=1, raise_on_redirect=False)
 			conn = self.shared_state.http.urlopen('GET', request_url, retries=retry, preload_content=False)
 		except urllib3.exceptions.MaxRetryError as e:
 			_print('[!] Fetch retries exceeded:', e.reason)
@@ -460,7 +460,7 @@ class Handler(socketserver.BaseRequestHandler):
 		elif code == 502: # exception
 			description = 'This page could not be fetched due to an unknown error.'
 		elif code == 504: # timeout
-			description = 'This page could not be fetched due to a Wayback Machine server timeout.'
+			description = 'This page could not be fetched due to a Wayback Machine server error.'
 		elif code == 412: # outside of tolerance
 			description = 'The earliest snapshot for this page is outside of the configured tolerance interval.'
 		elif code == 400 and reason == 'Host header missing': # no host header in transparent mode
