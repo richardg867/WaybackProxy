@@ -537,7 +537,8 @@ class Handler(socketserver.BaseRequestHandler):
 				if DATE != parsed['date'][0]:
 					DATE = parsed['date'][0]
 					self.shared_state.date_cache.clear()
-					self.shared_state.availability_cache.clear()
+					if self.shared_state.availability_cache:
+						self.shared_state.availability_cache.clear()
 				if DATE_TOLERANCE != parsed['dateTolerance'][0]:
 					DATE_TOLERANCE = parsed['dateTolerance'][0]
 				GEOCITIES_FIX = 'gcFix' in parsed
