@@ -23,7 +23,7 @@ class SharedState:
 		self.date_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
 
 		# Create internal LRU dictionary for date availability.
-		self.availability_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024) if WAYBACK_API else None
+		self.availability_cache = lrudict.LRUDict(maxduration=86400, maxsize=1024)
 
 		# Read domain whitelist file.
 		try:
@@ -120,7 +120,7 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += '''\r\n'''
 				pac += '''function FindProxyForURL(url, host)\r\n'''
 				pac += '''{\r\n'''
-				if self.shared_state.availability_cache == None:
+				if not WAYBACK_API:
 					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
 					pac += '''	{\r\n'''
 					pac += '''		return "DIRECT";\r\n'''
@@ -158,50 +158,46 @@ class Handler(socketserver.BaseRequestHandler):
 				request_url = 'https://web.archive.org/web/{0}if_/{1}'.format(effective_date, archived_url)
 
 			# Check Wayback Machine Availability API where applicable, to avoid archived 404 pages and other site errors.
-			if self.shared_state.availability_cache != None:
-				# Are we requesting from the Wayback Machine?
-				split = request_url.split('/')
+			split = request_url.split('/')
+			if split[2] == 'web.archive.org':
+				# Remove extraneous :80 from URL.
+				if ':' in split[5]:
+					if split[7][-3:] == ':80':
+						split[7] = split[7][:-3]
+				elif split[5][-3:] == ':80':
+					split[5] = split[5][:-3]
 
-				# If so, get the closest available date from the API.
-				if split[2] == 'web.archive.org':
-					# Remove extraneous :80 from URL.
-					if ':' in split[5]:
-						if split[7][-3:] == ':80':
-							split[7] = split[7][:-3]
-					elif split[5][-3:] == ':80':
-						split[5] = split[5][:-3]
+				# Check availability LRU cache.
+				availability_url = '/'.join(split[5:])
+				new_url = self.shared_state.availability_cache.get(availability_url, None)
+				if new_url:
+					# In cache => replace URL immediately.
+					request_url = new_url
+				elif WAYBACK_API:
+					# Not in cache => contact API.
+					try:
+						availability_endpoint = 'https://archive.org/wayback/available?url=' + urllib.parse.quote_plus(availability_url) + '&timestamp=' + effective_date[:14]
+						availability = json.loads(self.shared_state.http.request('GET', availability_endpoint, timeout=10, retries=1).data)
+						closest = availability.get('archived_snapshots', {}).get('closest', {})
+						new_date = closest.get('timestamp', None)
+					except:
+						_print('[!] Failed to fetch Wayback availability data')
+						new_date = None
 
-					# Check availability LRU cache.
-					availability_url = '/'.join(split[5:])
-					new_url = self.shared_state.availability_cache.get(availability_url, None)
-					if new_url:
-						# In cache => replace URL immediately.
-						request_url = new_url
-					else:
-						# Not in cache => contact API.
-						try:
-							availability_endpoint = 'https://archive.org/wayback/available?url=' + urllib.parse.quote_plus(availability_url) + '&timestamp=' + effective_date[:14]
-							availability = json.loads(self.shared_state.http.request('GET', availability_endpoint, timeout=10, retries=1).data)
-							closest = availability.get('archived_snapshots', {}).get('closest', {})
-							new_date = closest.get('timestamp', None)
-						except:
-							_print('[!] Failed to fetch Wayback availability data')
-							new_date = None
+					if new_date and new_date != effective_date[:14]:
+						# Returned date is different.
+						new_url = closest['url']
 
-						if new_date and new_date != effective_date[:14]:
-							# Returned date is different.
-							new_url = closest['url']
+						# Add asset tag to the date.
+						split = new_url.split('/')
+						if len(effective_date) > 14:
+							split[4] += effective_date[14:]
+						else:
+							split[4] += 'if_'
+						new_url = '/'.join(split)
 
-							# Add asset tag to the date.
-							split = new_url.split('/')
-							if len(effective_date) > 14:
-								split[4] += effective_date[14:]
-							else:
-								split[4] += 'if_'
-							new_url = '/'.join(split)
-
-							# Replace URL and add it to the availability cache.
-							request_url = self.shared_state.availability_cache[availability_url] = new_url
+						# Replace URL and add it to the availability cache.
+						request_url = self.shared_state.availability_cache[availability_url] = new_url
 
 			# Start fetching the URL.
 			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=5, backoff_factor=1, raise_on_redirect=False)
@@ -540,8 +536,7 @@ class Handler(socketserver.BaseRequestHandler):
 				if DATE != parsed['date'][0]:
 					DATE = parsed['date'][0]
 					self.shared_state.date_cache.clear()
-					if self.shared_state.availability_cache:
-						self.shared_state.availability_cache.clear()
+					self.shared_state.availability_cache.clear()
 				if DATE_TOLERANCE != parsed['dateTolerance'][0]:
 					DATE_TOLERANCE = parsed['dateTolerance'][0]
 				GEOCITIES_FIX = 'gcFix' in parsed
