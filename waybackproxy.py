@@ -200,8 +200,44 @@ class Handler(socketserver.BaseRequestHandler):
 						request_url = self.shared_state.availability_cache[availability_url] = new_url
 
 			# Start fetching the URL.
-			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=5, backoff_factor=1, raise_on_redirect=False)
-			conn = self.shared_state.http.urlopen('GET', request_url, retries=retry, preload_content=False)
+			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=0, backoff_factor=1)
+			while True:
+				conn = self.shared_state.http.urlopen('GET', request_url, redirect=False, retries=retry, preload_content=False)
+
+				# Check for redirects.
+				destination = conn.get_redirect_location()
+				if destination:
+					conn.drain_conn()
+					conn.release_conn()
+
+					# Check if the redirect goes to a different Wayback URL.
+					match = re.search('''(?:(?:https?:)?//web.archive.org)?/web/([^/]+/)(.+)''', destination)
+					if match:
+						archived_dest = match.group(2)
+
+						# Add missing protocol, just in case.
+						split = archived_dest.split('/')
+						if split[0][-1:] != ':':
+							split = ['http:', ''] + split
+
+						# Remove extraneous :80 from URL.
+						if split[2][-3:] == ':80':
+							split[2] = split[2][:-3]
+
+						# Check if the archived URL is different.
+						if archived_dest != archived_url:
+							# Add destination to availability cache and redirect the client.
+							_print('[r]', archived_dest)
+							new_url = '/'.join(split)
+							self.shared_state.availability_cache[archived_dest] = 'http://web.archive.org/web/' + match.group(1) + archived_dest
+							return self.send_redirect_page(http_version, archived_dest, conn.status)
+
+					# Not an archived URL or same URL, redirect ourselves.
+					request_url = destination
+					continue
+
+				# Not a redirect, move on.
+				break
 		except urllib3.exceptions.MaxRetryError as e:
 			_print('[!] Fetch retries exceeded:', e.reason)
 			return self.send_error_page(http_version, 504, 'Gateway Timeout')
@@ -215,12 +251,13 @@ class Handler(socketserver.BaseRequestHandler):
 		if conn.status != 200:
 			if conn.status in (403, 404): # not found
 				if self.guess_and_send_redirect(http_version, archived_url):
+					conn.drain_conn()
 					conn.release_conn()
 					return
-			elif conn.status in (301, 302): # urllib3-generated error about an infinite redirect loop
-				conn.release_conn()
-				_print('[!] Infinite redirect loop')
-				return self.send_error_page(http_version, 508, 'Infinite Redirect Loop')
+			#elif conn.status in (301, 302): # redirect loop detection currently unused
+			#	conn.drain_conn()
+			#	conn.release_conn()
+			#	return self.send_error_page(http_version, 508, 'Infinite Redirect Loop')
 
 			if conn.status != 412: # tolerance exceeded has its own error message above
 				_print('[!]', conn.status, conn.reason)
@@ -228,6 +265,7 @@ class Handler(socketserver.BaseRequestHandler):
 			# If the memento Link header is present, this is a website error
 			# instead of a Wayback error. Pass it along if that's the case.
 			if 'Link' not in conn.headers:
+				conn.drain_conn()
 				conn.release_conn()
 				return self.send_error_page(http_version, conn.status, conn.reason)
 
@@ -257,6 +295,7 @@ class Handler(socketserver.BaseRequestHandler):
 			# portion of the URL away if it ends up being HTML consumed
 			# through the QUICK_IMAGES interface.
 			if hostname == 'web.archive.org':
+				conn.drain_conn()
 				conn.release_conn()
 				archived_url = '/'.join(request_url.split('/')[5:])
 				_print('[r] [QI]', archived_url)
@@ -264,10 +303,11 @@ class Handler(socketserver.BaseRequestHandler):
 
 			# Check if the date is within tolerance.
 			if DATE_TOLERANCE != None:
-				match = re.search('''//web\\.archive\\.org/web/([0-9]+)''', conn.geturl() or '')
+				match = re.search('''(?://web\\.archive\\.org|^)/web/([0-9]+)''', conn.geturl() or '')
 				if match:
 					requested_date = match.group(1)
 					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(int(DATE_TOLERANCE)):
+						conn.drain_conn()
 						conn.release_conn()
 						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
 						if not self.guess_and_send_redirect(http_version, archived_url):
@@ -307,6 +347,7 @@ class Handler(socketserver.BaseRequestHandler):
 							# If the memento Link header is present, this is a website error
 							# instead of a Wayback error. Pass it along if that's the case.
 							if 'Link' not in conn.headers:
+								conn.drain_conn()
 								conn.release_conn()
 								return self.send_error_page(http_version, conn.status, conn.reason)
 
