@@ -238,6 +238,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 				# Wayback will add its JavaScript to anything it thinks is JavaScript.
 				# If this is detected, redirect ourselves through the raw asset interface.
+				content_type = conn.headers.get('Content-Type')
 				guessed_content_type = conn.headers.get('X-Archive-Guessed-Content-Type')
 				if not guessed_content_type:
 					guessed_content_type = content_type
@@ -282,8 +283,7 @@ class Handler(socketserver.BaseRequestHandler):
 				conn.release_conn()
 				return self.send_error_page(http_version, conn.status, conn.reason)
 
-		# Get content type.
-		content_type = conn.headers.get('Content-Type')
+		# Adjust content type.
 		if content_type == None:
 			content_type = 'text/html'
 		elif not CONTENT_TYPE_ENCODING:
