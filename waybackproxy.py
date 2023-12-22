@@ -236,7 +236,20 @@ class Handler(socketserver.BaseRequestHandler):
 					request_url = destination
 					continue
 
-				# Not a redirect, move on.
+				# Wayback will add its JavaScript to anything it thinks is JavaScript.
+				# If this is detected, redirect ourselves through the raw asset interface.
+				guessed_content_type = conn.headers.get('X-Archive-Guessed-Content-Type')
+				if not guessed_content_type:
+					guessed_content_type = content_type
+				if 'javascript' in guessed_content_type:
+					match = re.match('''(https?://web\\.archive\\.org/web/[0-9]+)([^/]*)(.+)''', request_url)
+					if match and match.group(2) != 'im_':
+						conn.drain_conn()
+						conn.release_conn()
+						request_url = match.group(1) + 'im_' + match.group(3)
+						continue
+
+				# This request can proceed.
 				break
 		except urllib3.exceptions.MaxRetryError as e:
 			_print('[!] Fetch retries exceeded:', e.reason)
@@ -286,9 +299,6 @@ class Handler(socketserver.BaseRequestHandler):
 
 		# Check content type to determine if this is HTML we need to patch.
 		# Wayback will add its HTML to anything it thinks is HTML.
-		guessed_content_type = conn.headers.get('X-Archive-Guessed-Content-Type')
-		if not guessed_content_type:
-			guessed_content_type = content_type
 		if 'text/html' in guessed_content_type:
 			# Some dynamically-generated links may end up pointing to
 			# web.archive.org. Correct that by redirecting the Wayback
@@ -413,7 +423,7 @@ class Handler(socketserver.BaseRequestHandler):
 						if match.group(2) in (None, b'if_', b'fw_'): # non-asset URL
 							return match.group(3) == b'https://' and b'http://' or match.group(3) # convert secure non-asset URLs to regular HTTP
 						asset_type = match.group(2)
-						if asset_type == b'js_': # stop JavaScript code injection
+						if asset_type == b'js_': # cut down on the JavaScript detector's second request
 							asset_type = b'im_'
 						if QUICK_IMAGES == 2:
 							return b'http://' + match.group(1) + b':' + asset_type + b'@'
