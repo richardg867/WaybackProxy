@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 import base64, datetime, json, lrudict, re, socket, socketserver, string, sys, threading, time, traceback, urllib.parse
+import argparse
+import os
+
 try:
 	import urllib3
 except ImportError:
 	print('WaybackProxy now requires urllib3 to be installed. Follow setup step 3 on the readme to fix this.')
 	sys.exit(1)
+ 
 from config_handler import *
+
+config = load_config()
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
+	allow_reuse_address = True  # Allow for address reuse (bind again)
 	pass
 
 class SharedState:
@@ -27,7 +34,9 @@ class SharedState:
 
 		# Read domain whitelist file.
 		try:
-			with open('whitelist.txt', 'r') as f:
+			dir_path = os.path.dirname(os.path.realpath(__file__))
+			file_name = os.path.join(dir_path, 'whitelist.txt')
+			with open(file_name, 'r') as f:
 				self.whitelist = f.read().splitlines()
 		except:
 			self.whitelist = []
@@ -61,8 +70,8 @@ class Handler(socketserver.BaseRequestHandler):
 
 		# read out the headers
 		request_host = None
-		pac_host = '" + location.host + ":' + str(LISTEN_PORT) # may not actually work
-		effective_date = DATE
+		pac_host = '" + location.host + ":' + str(config["LISTEN_PORT"]) # may not actually work
+		effective_date = config["DATE"]
 		auth = None
 		while line.strip() != '':
 			line = f.readline()
@@ -120,7 +129,7 @@ class Handler(socketserver.BaseRequestHandler):
 				pac += '''\r\n'''
 				pac += '''function FindProxyForURL(url, host)\r\n'''
 				pac += '''{\r\n'''
-				if not WAYBACK_API:
+				if not config["WAYBACK_API"]:
 					pac += '''	if (shExpMatch(url, "http://web.archive.org/web/*") && !shExpMatch(url, "http://web.archive.org/web/??????????????if_/*"))\r\n'''
 					pac += '''	{\r\n'''
 					pac += '''		return "DIRECT";\r\n'''
@@ -134,7 +143,7 @@ class Handler(socketserver.BaseRequestHandler):
 			elif hostname == 'web.archive.org':
 				if path[:5] != '/web/':
 					# Launch settings if enabled.
-					if SETTINGS_PAGE:
+					if config["SETTINGS_PAGE"]:
 						return self.handle_settings(parsed.query)
 					else:
 						return self.send_error_page(http_version, 404, 'Not Found')
@@ -144,7 +153,7 @@ class Handler(socketserver.BaseRequestHandler):
 					effective_date = split[4]
 					archived_url = '/'.join(split[5:])
 					_print('[>] [QI]', archived_url)
-			elif GEOCITIES_FIX and hostname == 'www.geocities.com':
+			elif config["GEOCITIES_FIX"] and hostname == 'www.geocities.com':
 				# Apply GEOCITIES_FIX and pass it through.
 				_print('[>]', archived_url)
 
@@ -173,7 +182,7 @@ class Handler(socketserver.BaseRequestHandler):
 				if new_url:
 					# In cache => replace URL immediately.
 					request_url = new_url
-				elif WAYBACK_API:
+				elif config["WAYBACK_API"]:
 					# Not in cache => contact API.
 					try:
 						availability_endpoint = 'https://archive.org/wayback/available?url=' + urllib.parse.quote_plus(availability_url) + '&timestamp=' + effective_date[:14]
@@ -202,8 +211,10 @@ class Handler(socketserver.BaseRequestHandler):
 			# Start fetching the URL.
 			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=0, backoff_factor=1)
 			while True:
-				conn = self.shared_state.http.urlopen('GET', request_url, redirect=False, retries=retry, preload_content=False)
-
+				try: #sometimes request_url is empty - to not throw error, just break
+					conn = self.shared_state.http.urlopen('GET', request_url, redirect=False, retries=retry, preload_content=False)
+				except:
+					break
 				# Check for redirects.
 				destination = conn.get_redirect_location()
 				if destination:
@@ -286,13 +297,13 @@ class Handler(socketserver.BaseRequestHandler):
 		# Adjust content type.
 		if content_type == None:
 			content_type = 'text/html'
-		elif not CONTENT_TYPE_ENCODING:
+		elif not config["CONTENT_TYPE_ENCODING"]:
 			idx = content_type.find(';')
 			if idx > -1:
 				content_type = content_type[:idx]
 
 		# Set the archive mode.
-		if GEOCITIES_FIX and hostname in ('www.oocities.org', 'www.oocities.com'):
+		if config["GEOCITIES_FIX"] and hostname in ('www.oocities.org', 'www.oocities.com'):
 			mode = 1 # oocities
 		else:
 			mode = 0 # Wayback Machine
@@ -312,14 +323,14 @@ class Handler(socketserver.BaseRequestHandler):
 				return self.send_redirect_page(http_version, archived_url, 301)
 
 			# Check if the date is within tolerance.
-			if DATE_TOLERANCE != None:
+			if config["DATE_TOLERANCE"] != None:
 				match = re.search('''(?://web\\.archive\\.org|^)/web/([0-9]+)''', conn.geturl() or '')
 				if match:
 					requested_date = match.group(1)
-					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(int(DATE_TOLERANCE)):
+					if self.wayback_to_datetime(requested_date) > self.wayback_to_datetime(original_date) + datetime.timedelta(int(config["DATE_TOLERANCE"])):
 						conn.drain_conn()
 						conn.release_conn()
-						_print('[!]', requested_date, 'is outside the configured tolerance of', DATE_TOLERANCE, 'days')
+						_print('[!]', requested_date, 'is outside the configured tolerance of', config["DATE_TOLERANCE"], 'days')
 						if not self.guess_and_send_redirect(http_version, archived_url):
 							self.send_error_page(http_version, 412, 'Snapshot ' + requested_date + ' not available')
 						return
@@ -363,7 +374,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 						# Identify content type so we don't modify non-HTML content.
 						content_type = conn.headers.get('Content-Type')
-						if not CONTENT_TYPE_ENCODING:
+						if not config["CONTENT_TYPE_ENCODING"]:
 							idx = content_type.find(';')
 							if idx > -1:
 								content_type = content_type[:idx]
@@ -408,7 +419,7 @@ class Handler(socketserver.BaseRequestHandler):
 				# Remove extraneous :80 from links.
 				data = re.sub(b'((?:(?:https?:)?//web.archive.org)?/web/)([^/]+)/([^/:]+)://([^/:]+):80/', b'\\1\\2/\\3://\\4/', data)
 				# Fix links.
-				if QUICK_IMAGES:
+				if config["QUICK_IMAGES"]:
 					# QUICK_IMAGES works by intercepting asset URLs (those
 					# with a date code ending in im_, js_...) and letting the
 					# proxy pass them through. This may reduce load time
@@ -425,7 +436,7 @@ class Handler(socketserver.BaseRequestHandler):
 						asset_type = match.group(2)
 						if asset_type == b'js_': # cut down on the JavaScript detector's second request
 							asset_type = b'im_'
-						if QUICK_IMAGES == 2:
+						if config["QUICK_IMAGES"] == 2:
 							return b'http://' + match.group(1) + b':' + asset_type + b'@'
 						else:
 							return b'http://web.archive.org/web/' + match.group(1) + asset_type + b'/' + match.group(3)
@@ -578,8 +589,6 @@ class Handler(socketserver.BaseRequestHandler):
 	def handle_settings(self, query):
 		"""Generate the settings page."""
 
-		global DATE, DATE_TOLERANCE, GEOCITIES_FIX, QUICK_IMAGES, WAYBACK_API, CONTENT_TYPE_ENCODING, SILENT, SETTINGS_PAGE
-
 		if query != '': # handle any parameters that may have been sent
 			parsed = urllib.parse.parse_qs(query)
 
@@ -647,20 +656,50 @@ class Handler(socketserver.BaseRequestHandler):
 print_lock = threading.Lock()
 def _print(*args, **kwargs):
 	"""Logging function."""
-	if SILENT:
+	if config["SILENT"]:
 		return
 	with print_lock:
 		print(*args, **kwargs, flush=True)
 
+
+
+
+
 def main():
-	"""Starts the server."""
-	server = ThreadingTCPServer(('', LISTEN_PORT), Handler)
-	_print('[-] Now listening on port', LISTEN_PORT)
-	_print('[-] Date set to', DATE)
+	"""Starts the server."""        
+	server = ThreadingTCPServer(('', config["LISTEN_PORT"]), Handler)
+	_print('[-] Now listening on port', config["LISTEN_PORT"])
+	_print('[-] Date set to', config["DATE"])
 	try:
 		server.serve_forever()
 	except KeyboardInterrupt: # Ctrl+C to stop
 		pass
 
+
+def main():
+    """Starts the server."""
+    parser = argparse.ArgumentParser(description='Starts the server with optional configuration file.')
+    parser.add_argument('-c', '--config', type=str, help='Path to the configuration file.')
+    args = parser.parse_args()
+
+    if args.config:
+        if os.path.isfile(args.config):
+            global config
+            
+            config = load_config(args.config)  # Load config from file
+        else:
+            print(f'Error: The specified configuration file does not exist: {args.config}')
+
+    server = ThreadingTCPServer(('', config["LISTEN_PORT"]), Handler)
+    _print('[-] Now listening on port', config["LISTEN_PORT"])
+    _print('[-] Date set to', config["DATE"])
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:  # Ctrl+C to stop
+        print("Exiting...") 
+        server.shutdown() #try to close connection gently but not sure if works correctly 
+        server.server_close()
+        pass
+
 if __name__ == '__main__':
-	main()
+    main()
