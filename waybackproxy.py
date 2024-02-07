@@ -15,6 +15,7 @@ config = load_config()
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	"""TCPServer with ThreadingMixIn added."""
+	allow_reuse_address = True  # Allow for address reuse (bind again)
 	pass
 
 class SharedState:
@@ -33,7 +34,9 @@ class SharedState:
 
 		# Read domain whitelist file.
 		try:
-			with open('whitelist.txt', 'r') as f:
+			dir_path = os.path.dirname(os.path.realpath(__file__))
+			file_name = os.path.join(dir_path, 'whitelist.txt')
+			with open(file_name, 'r') as f:
 				self.whitelist = f.read().splitlines()
 		except:
 			self.whitelist = []
@@ -208,8 +211,10 @@ class Handler(socketserver.BaseRequestHandler):
 			# Start fetching the URL.
 			retry = urllib3.util.retry.Retry(total=10, connect=10, read=5, redirect=0, backoff_factor=1)
 			while True:
-				conn = self.shared_state.http.urlopen('GET', request_url, redirect=False, retries=retry, preload_content=False)
-
+				try: #sometimes request_url is empty - to not throw error, just break
+					conn = self.shared_state.http.urlopen('GET', request_url, redirect=False, retries=retry, preload_content=False)
+				except:
+					break
 				# Check for redirects.
 				destination = conn.get_redirect_location()
 				if destination:
@@ -681,7 +686,7 @@ def main():
         if os.path.isfile(args.config):
             global config
             
-            config = load_config(args.config)  # Załaduj konfigurację z podanego pliku
+            config = load_config(args.config)  # Load config from file
         else:
             print(f'Error: The specified configuration file does not exist: {args.config}')
 
@@ -691,6 +696,9 @@ def main():
     try:
         server.serve_forever()
     except KeyboardInterrupt:  # Ctrl+C to stop
+        print("Exiting...") 
+        server.shutdown() #try to close connection gently but not sure if works correctly 
+        server.server_close()
         pass
 
 if __name__ == '__main__':
