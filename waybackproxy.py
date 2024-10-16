@@ -287,22 +287,15 @@ class Handler(socketserver.BaseRequestHandler):
 					# Check if the redirect goes to a different Wayback URL.
 					match = re.search('''(?:(?:https?:)?//web.archive.org)?/web/([^/]+/)(.+)''', destination)
 					if match:
-						archived_dest = match.group(2)
-
-						# Add missing protocol, just in case.
-						split = archived_dest.split('/')
-						if split[0][-1:] != ':':
-							split = ['http:', ''] + split
-
-						# Remove extraneous :80 from URL.
-						if split[2][-3:] == ':80':
-							split[2] = split[2][:-3]
+						archived_dest = self.sanitize_redirect(match.group(2))
 
 						# Check if the archived URL is different.
 						if archived_dest != archived_url:
+							# Remove extraneous :80 from URL.
+							archived_dest = re.sub('''^([^/]*//[^/]+):80''', '\\1', archived_dest)
+
 							# Add destination to availability cache and redirect the client.
 							_print('[r]', archived_dest)
-							new_url = '/'.join(split)
 							self.shared_state.availability_cache[archived_dest] = 'http://web.archive.org/web/' + match.group(1) + archived_dest
 							return self.send_redirect_page(http_version, archived_dest, conn.status)
 
