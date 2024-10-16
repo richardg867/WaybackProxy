@@ -397,7 +397,7 @@ class Handler(socketserver.BaseRequestHandler):
 						return self.send_redirect_page(http_version, archived_url, redirect_code)
 
 				# Remove pre-toolbar scripts and CSS.
-				data = re.sub(b'''<script (?:type="text/javascript" )?src="(?:https?:)?//(?:web-static\\.)?archive\\.org/_static/js/.*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, count=1, flags=re.S)
+				data = re.sub(b'''(?:<!-- is_embed=True -->\\r?\\n?)?<script (?:type="text/javascript" )?src="[^"]*/_static/js/.*<!-- End Wayback Rewrite JS Include -->\\r?\\n''', b'', data, count=1, flags=re.S)
 				# Remove toolbar. The if_ asset tag serves no toolbar, but we remove it just in case.
 				data = re.sub(b'''<!-- BEGIN WAYBACK TOOLBAR INSERT -->.*<!-- END WAYBACK TOOLBAR INSERT -->''', b'', data, count=1, flags=re.S)
 				# Remove comments on footer.
