@@ -127,11 +127,11 @@ class Handler(socketserver.BaseRequestHandler):
 		# read request line
 		reqline = line = f.readline()
 		split = line.rstrip().split(' ')
-		http_version = len(split) > 2 and split[2] or 'HTTP/0.9'
+		http_version = len(split) > 2 and split[2].upper() or 'HTTP/0.9'
 
-		if len(split) < 2 or split[0] != 'GET':
+		if len(split) < 2 or split[0].upper() != 'GET':
 			# only GET is implemented
-			return self.send_error_page(http_version, 501, 'Not Implemented')
+			return self.send_error_page(http_version, 501, 'Not Implemented', extra=split[0])
 
 		# read out the headers
 		request_host = None
@@ -571,7 +571,7 @@ class Handler(socketserver.BaseRequestHandler):
 		response += '\r\n\r\n'
 		self.request.sendall(response.encode('utf8', 'ignore'))
 
-	def send_error_page(self, http_version, code, reason):
+	def send_error_page(self, http_version, code, reason, extra=''):
 		"""Generate an error page."""
 
 		# Get a description for this error code.
@@ -580,7 +580,7 @@ class Handler(socketserver.BaseRequestHandler):
 		elif code == 403: # not crawled due to exclusion
 			description = 'This page was not archived due to a Wayback Machine exclusion.'
 		elif code == 501: # method not implemented
-			description = 'WaybackProxy only implements the GET method.'
+			description = 'WaybackProxy only implements the GET method. Your browser sent a request with the {0} method.'.format(extra.upper())
 		elif code == 502: # exception
 			description = 'This page could not be fetched due to an unknown error.'
 		elif code == 504: # timeout
@@ -588,7 +588,7 @@ class Handler(socketserver.BaseRequestHandler):
 		elif code == 412: # outside of tolerance
 			description = 'The earliest snapshot for this page is outside of the configured tolerance interval.'
 		elif code == 400 and reason == 'Host header missing': # no host header in transparent mode
-			description = 'WaybackProxy\'s transparent mode requires an HTTP/1.1 compliant client.'
+			description = 'WaybackProxy\'s transparent mode requires an HTTP/1.1-compliant client.'
 		else: # another error
 			description = 'Unknown error. The Wayback Machine may be experiencing technical difficulties.'
 
