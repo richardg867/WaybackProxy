@@ -595,7 +595,7 @@ class Handler(socketserver.BaseRequestHandler):
 
 		# Format error page template.
 		signature = self.signature()
-		error_page = string.Template(error_page).substitute(**locals())
+		error_page = string.Template(error_page).substitute(**locals()).encode('utf8', 'ignore')
 		error_page_len = len(error_page)
 
 		# Send formatted error page and stop.
@@ -604,23 +604,29 @@ class Handler(socketserver.BaseRequestHandler):
 			'Content-Type: text/html\r\n'
 			'Content-Length: {error_page_len}\r\n'
 			'\r\n'
-			'{error_page}'
 			.format(**locals()).encode('utf8', 'ignore')
 		)
+		self.request.sendall(error_page)
 		self.request.close()
 
 	def send_redirect_page(self, http_version, target, code=302):
 		"""Generate a redirect page."""
 
-		# make redirect page
-		redirectpage  = '<html><head><title>Redirect</title><meta http-equiv="refresh" content="0;url='
-		redirectpage += target
-		redirectpage += '"></head><body><p>If you are not redirected, <a href="'
-		redirectpage += target
-		redirectpage += '">click here</a>.</p></body></html>'
+		# Make redirect page.
+		redirect_page = '<html><head><title>Redirect</title><meta http-equiv="refresh" content="0;url=${target}"></head><body><p>If you are not redirected, <a href="${target}">click here</a>.</p></body></html>'
+		redirect_page = string.Template(redirect_page).substitute(**locals()).encode('utf8', 'ignore')
+		redirect_page_len = len(redirect_page)
 
-		# send redirect page and stop
-		self.request.sendall('{0} {1} Found\r\nLocation: {2}\r\nContent-Type: text/html\r\nContent-Length: {3}\r\n\r\n{4}'.format(http_version, code, target, len(redirectpage), redirectpage).encode('utf8', 'ignore'))
+		# Send redirect page and stop.
+		self.request.sendall(
+			'{http_version} {code} Found\r\n'
+			'Location: {target}\r\n'
+			'Content-Type: text/html\r\n'
+			'Content-Length: {redirect_page_len}\r\n'
+			'\r\n'
+			.format(**locals()).encode('utf8', 'ignore')
+		)
+		self.request.sendall(redirect_page)
 		self.request.close()
 
 	def guess_and_send_redirect(self, http_version, guess_url):
