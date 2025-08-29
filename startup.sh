@@ -1,4 +1,7 @@
 #!/bin/sh
+if [ "${HOST}" ]; then
+    sed -i -e "s/\"HOST\":[^,]*/\"HOST\": ${HOST}/g" /app/config.json
+fi
 if [ "${LISTEN_PORT}" ]; then
     sed -i -e "s/\"LISTEN_PORT\":[^,]*/\"LISTEN_PORT\": ${LISTEN_PORT}/g" /app/config.json
 fi
