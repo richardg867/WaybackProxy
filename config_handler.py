@@ -1,5 +1,9 @@
 import json
 
+# Host address to bind to for the HTTP proxy (default of "" means "all
+# interfaces").
+global HOST
+
 # Listen port for the HTTP proxy.
 global LISTEN_PORT
 
@@ -42,6 +46,7 @@ global SETTINGS_PAGE
 
 with open('config.json', 'r', encoding='utf8', errors='ignore') as f:
 	data = json.loads(f.read())
+	HOST = data.get('HOST', '')
 	LISTEN_PORT = data['LISTEN_PORT']
 	DATE = data['DATE']
 	DATE_TOLERANCE = data['DATE_TOLERANCE']
