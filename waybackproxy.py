@@ -530,11 +530,13 @@ class Handler(socketserver.BaseRequestHandler):
 
 	def send_passthrough(self, conn, http_version, content_type, request_url):
 		"""Pass data through to the client unmodified (save for our headers)."""
-		self.send_response_headers(conn, http_version, content_type, request_url, content_length=True)
-		for data in conn.stream(1024):
-			self.request.sendall(data)
-		conn.release_conn()
-		self.request.close()
+		try:
+			self.send_response_headers(conn, http_version, content_type, request_url, content_length=True)
+			for data in conn.stream(1024):
+				self.request.sendall(data)
+		finally:
+			self.drain_conn(conn)
+			self.request.close()
 
 	def send_response_headers(self, conn, http_version, content_type, request_url, content_length=False):
 		"""Generate and send the response headers."""
