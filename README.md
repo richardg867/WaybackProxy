@@ -30,6 +30,7 @@ When deploying via Docker, the config.json can be customized by specifying envir
 
 | Parameter        | Default | Description                            |
 |------------------|---------|----------------------------------------|
+| `HOST` | `''` | Host address to bind to for the HTTP proxy (default of `''` means "all interfaces") |
 | `LISTEN_PORT` | 8888 | Listen port for the HTTP proxy |
 | `DATE` | 20011025 | Date to get pages from Wayback. YYYYMMDD, YYYYMM and YYYY formats are accepted, the more specific the better.|
 | `DATE_TOLERANCE` | 365 | Allow the client to load pages and assets up to X days after DATE. Set to None to disable this restriction.|

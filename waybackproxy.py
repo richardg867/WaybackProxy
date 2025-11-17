@@ -732,8 +732,8 @@ def _print(*args, **kwargs):
 
 def main():
 	"""Starts the server."""
-	server = ThreadingTCPServer(('', LISTEN_PORT), Handler)
-	_print('[-] Now listening on port', LISTEN_PORT)
+	server = ThreadingTCPServer((HOST, LISTEN_PORT), Handler)
+	_print('[-] Now listening on', '' if HOST == '' else (' on ' + HOST), ' port ', LISTEN_PORT, sep='')
 	_print('[-] Date set to', DATE)
 	try:
 		server.serve_forever()
